@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { symlink, unlink, writeFile } from 'node:fs/promises';
+import { realpath, symlink, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fixture, policy, context, request } from './fixtures.ts';
 
@@ -22,7 +22,10 @@ test('approval shows canonical aliases and exact Bash; oversize payload blocks w
   const titles: string[] = [];
   const ctx = context(f.cwd, async title => { titles.push(title); return false; });
   await gate.call(request('edit', 'alias'), ctx);
-  assert.equal(titles.length, 1); assert.match(titles[0], /Canonical:/); assert.match(titles[0], /safe.txt/);
+  assert.equal(titles.length, 1); assert.match(titles[0], /Canonical:/);
+  const canonicalField = titles[0].match(/Canonical: "((?:[^"\n]|\n  )*)"/);
+  assert.ok(canonicalField);
+  assert.equal(JSON.parse(`"${canonicalField[1]}"`.replace(/\n  /g, '')), await realpath(join(f.cwd, 'safe.txt')));
   await gate.call({ toolName: 'bash', toolCallId: 'b', input: { command: 'git push origin main' } }, ctx);
   assert.match(titles[1], /Command: "git push origin main"/); assert.match(titles[1], /gitPush/);
   const oversized = { toolName: 'write', toolCallId: 'large', input: { path: 'safe.txt', content: 'x'.repeat(1000) } };
