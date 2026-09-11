@@ -11,8 +11,9 @@ No formal third-party audit has been performed.
 
 Before first publication, the maintainer must enable GitHub private vulnerability
 reporting for the final repository and verify its **Security > Report a
-vulnerability** entry. Repository ownership is still a release placeholder.
-There is currently no live reporting endpoint promised by this staging package.
+vulnerability** entry. The public repository is
+[chicovw/pi-monotonic-permissions](https://github.com/chicovw/pi-monotonic-permissions).
+Private reporting availability has not been verified in this development task.
 Do not put exploit details or secrets in a public issue. If the private button
 is unavailable, open a minimal issue requesting a private contact without details.
 
@@ -23,7 +24,7 @@ Coordinated disclosure is preferred; propose a timeline with the maintainer.
 
 ## In-scope issues
 
-While a correctly loaded gate is intercepting a supported model tool call:
+In guarded/trusted mode, while a correctly loaded gate intercepts a model tool call:
 
 - A denied protected target becomes readable through a symlink or path alias.
 - Project policy weakens an authoritative global restriction.
@@ -50,3 +51,63 @@ These behaviors alone are not violations of the implemented policy boundary:
 Reports about these limitations and mitigation research are welcome, but the
 package does not claim OS, network or subprocess containment. A reproducible
 failure of a documented check remains relevant even if it involves those areas.
+
+## Custom tools and grants
+
+Execution eligibility is evaluated before policy, grants and mode. `PUBLIC`,
+`INTERNAL`, `PRIVATE`, and `SECRET` are ordered classifications. Approved
+loopback-local execution may reach `PRIVATE`; hosted execution defaults to
+`PUBLIC`; declared `SECRET` is never authorized for normal generative inference. Project
+ceilings may only lower the configured ceiling. No grant can declassify data or
+override this denial. Missing or malformed declarations fail closed.
+
+In-scope failures include reviewed adapters misclassifying broader operations,
+`scope:all` executing under active-lineage permission, project policy weakening a
+global custom-tool DENY, malformed custom calls failing open, and stale grants
+matching a changed identity that the implementation promises to invalidate.
+DENY must remain unapprovable even when a session/persistent grant exists.
+
+A stale or overly broad grant can create excessive authority when semantics evolve.
+Keys include reviewed operation, mode, cwd/policy hashes, full exposed tool metadata,
+schema, adapter version, and entry-file hash. Pi's `sourceInfo` is location/source
+metadata, not cryptographic provenance. Changes confined to imported modules,
+configuration or external resources can evade those fingerprints. Exact package
+pins, installation review and grant revocation remain operator responsibilities.
+No stored grant contains raw tool inputs, outputs or recalled history. The state
+directory must be owner-only and files must be owner-only regular files; unsafe or
+malformed state fails closed when a persistent grant is consulted.
+
+## YOLO operator override
+
+YOLO intentionally bypasses ordinary model-tool approval after execution
+eligibility succeeds. It does not bypass classification ceilings: hosted
+`PUBLIC` routes cannot receive `PRIVATE`, and `SECRET` remains ineligible even
+locally. Intentional startup-selected YOLO
+behavior is outside normal enforcement guarantees. Entering YOLO through an
+unauthorized model/project mode-selection path would be an in-scope defect.
+No runtime escalation API is supplied. Other host controls remain independent.
+
+## Extension JavaScript
+
+Tool policy governs model-requested invocation. It does not sandbox installed
+extension JavaScript. A malicious installed extension can independently access
+files, processes and networks, or interfere with in-process state. That behavior
+alone is outside this gate's stated guarantee. Source/package review is the
+installation trust gate; adapter recognition does not establish installation trust.
+
+## Execution eligibility and supported runtime
+
+In every mode, an in-scope defect includes approving a correctly classified
+resource above the resolved ceiling, weakening a global ceiling through project
+configuration, a grant overriding classification denial, or forgetting an admitted
+session classification on resume. The pure contract and the Pi 0.85.1 post-auth
+request veto are tested separately. Other Pi versions are unsupported; a module
+that cannot load cannot supply a request veto.
+
+The operator supplies classifications and attests the runtime at the exact
+provider/API/endpoint. This is not secret detection, a service authenticity check,
+or transport containment. A wrong declaration can expose data. A replacement
+service, arbitrary provider implementation, or installed extension running its own
+network code remains outside this boundary. Only `openai-completions` has been
+qualified. Credentials are consumed within Pi's deterministic authentication path;
+the eligibility callback receives no credential/header/environment values.

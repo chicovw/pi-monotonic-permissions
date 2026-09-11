@@ -1,11 +1,11 @@
 import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createGate } from '../src/index.ts';
+import { createGate, execution } from './gate-fixture.ts';
 
 export function policy() {
   return {
-    version: 1, tools: { read: 'ALLOW', write: 'ALLOW', edit: 'ALLOW', bash: 'ALLOW' },
+    version: 1, execution: execution(), tools: { read: 'ALLOW', write: 'ALLOW', edit: 'ALLOW', bash: 'ALLOW' },
     paths: { roots: [{ base: 'project', path: '.' }],
       inside: { read: 'ALLOW', write: 'ALLOW', edit: 'ALLOW' },
       outside: { read: 'DENY', write: 'DENY', edit: 'DENY' },

@@ -1,6 +1,8 @@
 import { classify, UnsupportedOperation } from './bash.ts';
 import { normalize, requireReadable, resolveTarget } from './paths.ts';
 import type { Action, Operation } from './policy.ts';
+import type { ToolInfo } from '@earendil-works/pi-coding-agent';
+import { describeCustom } from './custom-tools.ts';
 
 export interface Request { toolName: string; toolCallId: string; input: Record<string, unknown> }
 function shape(input: unknown, keys: string[], required: string[]): asserts input is Record<string, unknown> {
@@ -10,7 +12,7 @@ function shape(input: unknown, keys: string[], required: string[]): asserts inpu
 function text(value: unknown): asserts value is string { if (typeof value !== 'string') throw new Error('TOOL_SHAPE'); }
 function number(value: unknown): void { if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)) throw new Error('TOOL_SHAPE'); }
 
-export async function describe(request: Request, cwd: string): Promise<Action> {
+export async function describe(request: Request, cwd: string, info?: ToolInfo): Promise<Action> {
   if (typeof request.toolCallId !== 'string' || !request.toolCallId) throw new Error('TOOL_SHAPE');
   const input = request.input;
   const action: Action = { tool: request.toolName, targets: [] };
@@ -48,7 +50,11 @@ export async function describe(request: Request, cwd: string): Promise<Action> {
     if (!Array.isArray(input.edits) || !input.edits.length) throw new Error('TOOL_SHAPE');
     for (const edit of input.edits) { shape(edit, ['oldText', 'newText'], ['oldText', 'newText']); text(edit.oldText); text(edit.newText); }
     operations = ['read', 'write', 'edit'];
-  } else throw new UnsupportedOperation('UNSUPPORTED_TOOL');
+  } else {
+    // These are native Pi surfaces whose filesystem/process semantics remain unsupported.
+    if (['find', 'ls', 'powershell'].includes(request.toolName)) throw new UnsupportedOperation('UNSUPPORTED_TOOL');
+    return describeCustom(request, info);
+  }
   text(input.path); normalize(input.path, cwd);
   const target = await resolveTarget(input.path, cwd, request.toolName === 'write');
   if (target.directory) throw new Error('REGULAR_FILE_REQUIRED');

@@ -15,18 +15,20 @@ const model = { id: 'fixture-model', name: 'deterministic fixture, no inference'
   provider: 'fixture-provider', baseUrl: 'http://127.0.0.1:9/v1', reasoning: false, input: ['text'] as ('text' | 'image')[], contextWindow: 73728,
   maxTokens: 8192, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
 
-async function sessionFor(f: Awaited<ReturnType<typeof fixture>>, tools: string[], confirm = async () => false, extension = entry) {
+async function sessionFor(f: Awaited<ReturnType<typeof fixture>>, tools: string[], confirm: () => Promise<boolean | string> = async () => false, extension: string | string[] = entry, statuses: string[] = [], manager?: ReturnType<typeof sdk.SessionManager.create>) {
   process.env.PI_MONOTONIC_PERMISSIONS_POLICY = f.globalPath;
+  process.env.PI_CODING_AGENT_DIR = f.agentDir;
   const settingsManager = sdk.SettingsManager.inMemory({ defaultProjectTrust: 'never', compaction: { enabled: false }, retry: { enabled: false } });
   const loader = new sdk.DefaultResourceLoader({ cwd: f.cwd, agentDir: f.agentDir, settingsManager,
-    additionalExtensionPaths: [extension], noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true });
+    additionalExtensionPaths: typeof extension === 'string' ? [extension] : extension, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true });
   await loader.reload();
   const modelRuntime = await sdk.ModelRuntime.create({ authPath: join(f.agentDir, 'auth.json'), modelsPath: null,
     modelsStorePath: join(f.agentDir, 'models-cache.json'), allowModelNetwork: false, refreshOnCreate: false });
+  modelRuntime.registerProvider(model.provider, { api: model.api, baseUrl: model.baseUrl, apiKey: 'synthetic-test-only', models: [model] });
   const result = await sdk.createAgentSession({ cwd: f.cwd, agentDir: f.agentDir, settingsManager, modelRuntime, model,
-    tools, resourceLoader: loader, sessionManager: sdk.SessionManager.create(f.cwd, join(f.agentDir, 'sessions')) });
-  await result.session.bindExtensions({ mode: 'tui', uiContext: { select: async () => await confirm() ? 'Allow once' : 'Cancel', notify() {}, setStatus() {} } as any });
-  return { ...result, loader };
+    tools, resourceLoader: loader, sessionManager: manager ?? sdk.SessionManager.create(f.cwd, join(f.agentDir, 'sessions')) });
+  await result.session.bindExtensions({ mode: 'tui', uiContext: { select: async () => { const v = await confirm(); return typeof v === 'string' ? v : v ? 'Allow once' : 'Cancel'; }, notify() {}, setStatus(_key: string, value: string) { statuses.push(value); } } as any });
+  return { ...result, loader, modelRuntime };
 }
 
 async function call(session: any, name: string, args: Record<string, unknown>) {
@@ -162,4 +164,71 @@ test('actual Pi trusted: project edit ASK is one-shot and profile injection fail
   const invalid = await sessionFor(f, ['read']); t.after(() => invalid.session.dispose());
   assert.deepEqual(invalid.extensionsResult.errors, []);
   assert.match(JSON.stringify((await call(invalid.session, 'read', { path: 'safe.txt' })).content), /EVALUATION_FAILED/);
+});
+
+for (const reversed of [false, true]) test(`actual Pi custom tools and grants, extension order reversed=${reversed}`, async t => {
+  const f = await fixture(); t.after(f.cleanup); await f.setGlobal({ ...policy(), profile: 'trusted' });
+  const custom = join(f.root, 'custom.ts');
+  const { recallSchema } = await import('../src/custom-tools.ts');
+  await writeFile(custom, `export default function(pi) {
+    let executions = 0;
+    for (const name of ['recall', 'unreviewed']) pi.registerTool({name, label: name, description: 'Synthetic reviewed schema fixture',
+      parameters: name === 'recall' ? ${JSON.stringify(recallSchema)} : {type:'object',properties:{value:{type:'string'}}},
+      async execute() { return {content:[{type:'text',text:'executed '+(++executions)}],details:{}}; }
+    });
+  }`);
+  let prompts = 0, choice = 'Cancel'; const statuses: string[] = [];
+  const paths = reversed ? [custom, entry] : [entry, custom];
+  const make = () => sessionFor(f, ['read', 'recall', 'unreviewed'], async () => { prompts++; return choice; }, paths, statuses);
+  let { session, extensionsResult } = await make(); t.after(() => session.dispose()); assert.deepEqual(extensionsResult.errors, []);
+  assert.ok(statuses.includes('permissions: trusted'));
+  assert.equal((await call(session, 'recall', {})).isError, false); assert.equal(prompts, 0);
+  const broad = { scope: 'all' };
+  assert.match(JSON.stringify((await call(session, 'recall', broad)).content), /APPROVAL_DECLINED/);
+  choice = 'Allow once';
+  for (let i = 0; i < 2; i++) assert.equal((await call(session, 'recall', broad)).isError, false);
+  assert.equal(prompts, 3);
+  choice = 'Allow for session'; assert.equal((await call(session, 'recall', broad)).isError, false);
+  assert.equal((await call(session, 'recall', { ...broad, query: 'different' })).isError, false); assert.equal(prompts, 4);
+  session.dispose(); ({ session } = await make()); choice = 'Always allow';
+  assert.equal((await call(session, 'recall', broad)).isError, false); assert.equal(prompts, 5);
+  session.dispose(); ({ session } = await make()); choice = 'Cancel';
+  assert.equal((await call(session, 'recall', broad)).isError, false); assert.equal(prompts, 5);
+  assert.match(JSON.stringify((await call(session, 'unreviewed', { value: 'probe' })).content), /APPROVAL_DECLINED/); assert.equal(prompts, 6);
+  await f.setProject({ version: 1, customTools: { recall: 'DENY' } }); session.dispose(); ({ session } = await make());
+  assert.match(JSON.stringify((await call(session, 'recall', broad)).content), /POLICY_DENY/); assert.equal(prompts, 6);
+});
+
+test('actual Pi guarded unknown denial and startup YOLO visibility/bypass in synthetic state', async t => {
+  const f = await fixture(); t.after(f.cleanup); await f.setGlobal({ ...policy(), profile: 'guarded' });
+  const custom = join(f.root, 'unknown.ts'); await writeFile(custom, `export default pi => pi.registerTool({ name:'probe',label:'probe',description:'Harmless probe',parameters:{type:'object',properties:{}},async execute(){return {content:[{type:'text',text:'probe executed'}],details:{}}} });`);
+  const paths = [entry, custom]; const statuses: string[] = []; let prompts = 0;
+  const make = () => sessionFor(f, ['read', 'probe'], async () => { prompts++; return false; }, paths, statuses);
+  let { session } = await make(); t.after(() => session.dispose());
+  assert.match(JSON.stringify((await call(session, 'probe', {})).content), /POLICY_DENY/);
+  assert.ok(statuses.includes('permissions: guarded')); session.dispose();
+  process.env.PI_MONOTONIC_PERMISSIONS_PROFILE = 'yolo';
+  try { ({ session } = await make()); } finally { delete process.env.PI_MONOTONIC_PERMISSIONS_PROFILE; }
+  assert.ok(statuses.includes('permissions: YOLO ⚠'));
+  assert.equal((await call(session, 'probe', {})).isError, false);
+  assert.match(JSON.stringify((await call(session, 'read', { path: '.env' })).content), /SYNTHETIC_PROTECTED_MARKER/);
+  assert.equal(prompts, 0);
+});
+
+test('actual Pi persists admission classification and denies hosted release after resume', async t => {
+  const f = await fixture(); t.after(f.cleanup);
+  const p = policy(); p.execution.tools.read = 'PRIVATE';
+  p.execution.routes.push({ provider:'hosted-fixture',api:'openai-completions',baseUrl:'https://example.invalid/v1',runtime:'synthetic',environment:'HOSTED_CONTROLLED',ceiling:'PUBLIC' });
+  await f.setGlobal(p);
+  const first = await sessionFor(f,['read']);
+  assert.equal((await call(first.session,'read',{path:'safe.txt'})).isError,false);
+  const records = first.session.sessionManager.getEntries().filter((e:any)=>e.customType==='pi-monotonic-permissions.classification');
+  assert.equal(records.length,1); assert.deepEqual((records[0] as any).data,{classification:'PRIVATE'});
+  const file = first.session.sessionFile!; first.session.dispose();
+  const resumed = await sessionFor(f,['read'],async()=>false,entry,[],sdk.SessionManager.open(file)); t.after(()=>resumed.session.dispose());
+  let providerCalls=0;
+  const hostedModel={...model,provider:'hosted-fixture',baseUrl:'https://example.invalid/v1'};
+  resumed.modelRuntime.registerProvider(hostedModel.provider,{api:hostedModel.api,baseUrl:hostedModel.baseUrl,apiKey:'synthetic',models:[hostedModel],streamSimple:()=>{providerCalls++;throw new Error('must not run');}});
+  const result = await resumed.modelRuntime.completeSimple(hostedModel,{messages:[{role:'user',content:'synthetic',timestamp:Date.now()}]});
+  assert.equal(result.stopReason,'error'); assert.match(result.errorMessage!,/CLASSIFICATION_DENY/); assert.equal(providerCalls,0);
 });

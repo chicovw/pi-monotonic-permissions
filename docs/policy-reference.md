@@ -8,17 +8,102 @@ escaped duplicates, are rejected. Input longer than 1,048,576 JavaScript string 
 ## Global and project files
 
 `PI_MONOTONIC_PERMISSIONS_POLICY` must name an absolute global-policy path.
-The global file is mandatory. The optional project file is exactly
+The global file and execution declaration are mandatory in every mode; startup
+YOLO cannot bypass eligibility loading. The optional project file is exactly
 `<canonical launch cwd>/.pi/pi-monotonic-permissions.json`. A genuinely absent
 project file is neutral. Project-policy symlinks and a symlinked `.pi` directory
 are rejected. Policies are immutable session snapshots, not automatically reloaded.
 Changing a loaded policy causes tool calls to block until an explicit new snapshot.
 
-Top-level global fields are `version`, optional `profile`, `tools`, `paths`, `bash`
-and `publication`. All except `profile` are required. Project policy requires
+Top-level global fields are `version`, optional `profile`, `tools`, `paths`, `bash`,
+`publication`, `execution`, and optional `customTools`. The five original non-profile fields
+are required. Project policy requires
 `version`; other sections may be omitted. `profile` is **not valid** in a project
 file. There are no includes, priorities, environment interpolation or last-match
 rules. Missing project fields contribute ALLOW independently of global policy.
+
+## Execution eligibility
+
+The separate execution declaration defines `context`, `history`, classified
+`tools`, and resolved `routes`. Classifications are exactly `PUBLIC`, `INTERNAL`,
+`PRIVATE`, and `SECRET`, ordered from least to most restricted. A route is
+`LOCAL_TRUSTED` (loopback, maximum `PRIVATE`) or `HOSTED_CONTROLLED` (V1.3
+maximum `PUBLIC`). `SECRET` is always denied for normal generative processing.
+The project `execution` section may lower the route ceiling and may raise the
+declared context/history classification, but cannot raise the ceiling.
+
+Eligibility is checked before policy, grants, and mode. Missing or malformed
+declarations deny. `mayReleaseContext` is the stable pure seam a future router
+can call; V1.3 does not select models/routes or sanitize data. Runtime identity
+uses resolved provider, API and endpoint characteristics, never model names.
+Persistent or session grants cannot override classification denial.
+
+The global `execution` object has exactly these fields:
+
+```json
+{"context":"PRIVATE","history":"PRIVATE","tools":{"read":"PRIVATE"},
+ "routes":[{"provider":"omlx","api":"openai-completions",
+ "baseUrl":"http://127.0.0.1:8000/v1","runtime":"omlx",
+ "environment":"LOCAL_TRUSTED","ceiling":"PRIVATE"}],
+ "ceiling":"PRIVATE","protected":[{"component":".env","classification":"SECRET"}]}
+```
+
+`context`, `history`, `tools`, and `routes` are required. Tool names and route
+identity strings are bounded non-empty strings (maximum 256 characters); there
+are at most 128 tool declarations, 32 routes, and 128 protected component rules.
+Routes match the post-authentication `provider`, `api`, and `baseUrl` exactly.
+Duplicate triples are rejected, even when their `runtime` labels differ. `runtime`
+is the operator's attestation of the reviewed service at that endpoint, not a
+Pi-exposed provenance measurement. Hosted routes are limited to `PUBLIC` in this
+version. Protected rules match both lexical and canonical path components and only raise classification. A tool declaration
+asserts the classification of the entire operation, including opaque subprocess
+or custom-tool exposure; no Bash or unknown-tool exposure is assumed by default.
+`SECRET` cannot be made eligible by any ceiling or mode.
+
+The project `execution` object supports only `ceiling`, `context`, and `history`.
+It may lower the ceiling and may raise the declared context/history high-water
+classification conservatively; it cannot raise the global route ceiling.
+
+
+`ceiling` and `protected` are optional globally. Omitted tool names deny unless
+an explicit `"*"` exposure declaration exists. Exact tool-name declarations take
+precedence over `"*"`. Every declaration covers all input/output exposure of that
+tool, including opaque program behavior. Declaring arbitrary programs PRIVATE
+is an operator assertion, not proof that they cannot read a secret. The example
+intentionally omits Bash and unknown tools. Add declarations only after reviewing
+their exposure in the intended environment.
+
+The effective context label is the maximum of global context, global history,
+project context/history, and saved session admission labels. An admitted tool
+raises that label when necessary, before execution. A custom session entry named
+`pi-monotonic-permissions.classification` stores only `{classification: ...}`.
+Compaction, branch changes and resume never automatically downgrade it. Classifying
+history PRIVATE consequently excludes the entire session from a PUBLIC hosted
+route, even before recall. A new separately authorized sanitized session is needed
+for a lower classification. Missing or malformed declarations and stored labels
+fail closed. This is conservative context accounting, not content inspection.
+
+URLs may not contain credentials, queries, or fragments. LOCAL_TRUSTED requires
+HTTP(S) loopback `127.0.0.1` or `[::1]`; HOSTED_CONTROLLED requires HTTPS and a
+non-loopback endpoint. Host authentication is not classification authorization.
+The operator is responsible for the approved service/provider behind that route;
+redirect behavior and arbitrary extension JavaScript are not network containment.
+The concrete Pi adapter currently accepts only `openai-completions` on Pi 0.85.1.
+
+The implemented pure contract is callable by trusted application code:
+
+```ts
+import { mayReleaseContext } from './src/eligibility.ts';
+const decision = mayReleaseContext('PRIVATE', resolvedRoute, 'PUBLIC');
+// { allowed: false, reason: 'CLASSIFICATION_EXCEEDS_CEILING' }
+```
+
+`resolvedRoute` has the six fields shown above. The third argument is an optional
+project ceiling, composed using the lower ceiling. Malformed input returns a deny.
+This is not a registered model tool or a route selector. The schema and pure seam
+are implemented; the private Pi binding is version-specific and requires review
+on upgrades. Automatic routing, data detection, sanitization, and broader hosted
+context authorization remain deferred.
 
 ## Decisions and profiles
 
@@ -28,13 +113,20 @@ all applicable restrictions and both layers. DENY is never approvable.
 Global `profile` may be `guarded` or `trusted`. Guarded adds ASK to native write
 and edit tool calls. Trusted contributes no additional restriction. An omitted
 profile preserves explicit legacy policy behavior. Explicit tool/path restrictions
-still win. `yolo`, runtime switching and persistent profile grants do not exist.
+still win. Global `profile: "yolo"` is rejected: YOLO is startup mode, not policy.
+`PI_MONOTONIC_PERMISSIONS_PROFILE` accepts exactly `guarded`, `trusted` or `yolo`
+and overrides the global profile default. An invalid startup value leaves the
+gate blocking. The value is captured when the extension loads. There is no runtime
+switch or model-callable selector. YOLO skips ordinary policy approval after
+eligibility, while classification denials remain enforced. Its footer is
+`permissions: YOLO ⚠`.
 
 ## Tools
 
 `tools` maps `read`, `write`, `edit`, `bash` to decisions. Global requires all four;
-project may provide a subset. Single-file native grep uses read policy. Unknown
-model-requested tools, native find/ls and recursive native grep block.
+project may provide a subset. Single-file native grep uses read policy. Native
+find/ls/PowerShell and recursive native grep remain unsupported in enforced modes.
+Extension tools use the separate custom policy below.
 
 - read requires target read permission.
 - write requires destination write and prospective parent-creation permission.
@@ -168,6 +260,120 @@ A policy DENY is distinguished from failure, but both prevent intercepted execut
 Only ASK has an approval route, only in TUI with UI available. Cancel is initially
 selected. Allow once rechecks the unchanged request, snapshot and target identities.
 Oversize proposals block instead of truncating critical information. The present
-budget is ten lines of 68 ASCII characters. No permanent or executable-wide grant.
+budget is ten lines of 68 ASCII characters. Native/Bash choices remain one-shot;
+custom session/persistent choices are described below. No executable-wide grant exists.
 Diagnostics are off by default. Native session logging is Pi's responsibility and
 may include arguments/results even though extension diagnostics omit payloads.
+
+## Custom tools (implemented V1.3 fields)
+
+`customTools` is optional in both global and project policy. It accepts only:
+
+| Field | Values | Meaning |
+|---|---|---|
+| `unknown` | `ASK`, `DENY` | Structurally valid unreviewed custom-tool fallback |
+| `recall` | `ALLOW`, `ASK`, `DENY` | Restriction on all calls named recall, including changed schemas |
+| `operations` | object | The two reviewed operation restrictions below |
+| `operations.recall.activeLineage` | `ALLOW`, `ASK`, `DENY` | Validated active-lineage recall |
+| `operations.recall.allLineages` | `ALLOW`, `ASK`, `DENY` | Validated explicit `scope: "all"` recall |
+
+JSON operation keys contain literal dots:
+
+```json
+{
+  "version": 1,
+  "customTools": {
+    "recall": "DENY",
+    "operations": {"recall.activeLineage": "ALLOW"}
+  }
+}
+```
+
+This valid project policy still denies recall: the per-tool DENY wins over the
+operation ALLOW. A global ASK or DENY cannot be weakened by project ALLOW.
+Missing project fields are neutral. A changed/unreviewed recall schema retains
+all configured recall restrictions conservatively, including operation DENY.
+
+Global defaults when a field is absent:
+
+| Operation | trusted | guarded / legacy |
+|---|---|---|
+| reviewed active lineage | ALLOW | ASK |
+| reviewed all lineages | ASK | ASK |
+| unknown custom tool | ASK | DENY |
+
+`unknown: ALLOW` is rejected even in project policy. Guarded may explicitly opt
+into `unknown: ASK`; its default DENY reflects absent semantic review. Explicit
+per-operation settings may replace the global defaults, then all applicable
+restrictions compose. There is no generic dynamic adapter configuration API.
+
+The Blackhole adapter validates only the exact 0.5.3 fields: optional `query`
+(string), `expand` (at most 128 nonnegative safe-integer indices), `page` (positive
+safe integer), `scope` (`lineage` or `all`), and `mode` (`hybrid`, `file`, `touched`).
+Unknown fields and invalid values deny. These validation bounds deliberately
+reject some numerically invalid shapes upstream's broad number schema accepts.
+All default/ID/regex/file/touched/drill-down/pagination calls use the supplied
+scope. `query: "scope:all"` is search text. Active lineage also requires Pi's
+nonempty branch with valid entry IDs to avoid upstream's all-entry fallback.
+
+Schema recognition ignores descriptive annotations only; the full schema still
+participates in grant invalidation. Changed/unrecognized schemas fall back to
+unknown policy, with no Always Allow. Source/package review remains required.
+Recall returns session history, including omitted tool outputs, not native file
+permission. Its information boundary is described in the threat model.
+
+## Operator grants (implemented V1.3 state)
+
+Grants are not policy fields. Effective DENY is checked before any grant lookup.
+Only effective ASK may be resolved by a grant. Supported UI choices:
+
+| Operation | Available choices |
+|---|---|
+| Native or Bash ASK | Cancel, Allow once |
+| Unknown custom ASK | Cancel, Allow once, Allow for session |
+| Reviewed recall ASK | Above plus Always allow when source metadata is readable |
+
+Once binds the exact request, full action/targets, session epoch, frozen policy
+and selected mode to one execution. Reviewed session grants bind semantic class;
+unknown session grants bind tool, contract and exact normalized arguments. They
+are cleared on session shutdown/start, including new/resume/fork/reload. No session
+grant is written to policy or disk.
+
+Persistent grants live at the Pi agent directory's
+`pi-monotonic-permissions/grants.json` (default `~/.pi/agent/`). `PI_CODING_AGENT_DIR`
+selects that directory according to Pi conventions. Directory mode must exclude
+group/world access (created 0700); file mode must exclude group/world access
+(created 0600), be operator-owned, regular, and have one hard link. Symlinked
+state paths and malformed/oversized state block grant use. Limits: 128 records,
+65,536 file bytes at inspection. Storage uses atomic replacement, without a
+cross-process grant transaction service.
+
+State schema:
+
+```json
+{"version":1,"grants":[]}
+```
+
+Each grant has exactly `tool`, `operation`, `contract`, `context`. The first two
+are bounded names; the latter two are SHA-256 hex digests. Context binds canonical
+cwd, policy-file snapshot and mode. Contract binds adapter version, full exposed
+tool metadata/schema/source identity and readable entry-file content. No raw
+arguments, results, session messages or recalled content are stored. This is
+convenience state, not an authorization format for model-authored files.
+
+Changing any keyed identity prevents an old grant matching, including harmless
+policy rewrites. Source metadata is not cryptographic package provenance.
+Changes confined to imported modules or runtime configuration are not reliably
+detected. Re-review package changes and revoke stale grants as needed. DENY always
+wins even if a perfectly matching record exists. See OPERATIONS for inspection
+and deletion; removal takes effect on the next persistent lookup.
+
+## Status of the interface
+
+All fields above are implemented in the unreleased V1.3 development tree; schema
+version remains 1 and package version remains 0.1.0. They are an evolving 0.x API,
+not a claim of a newly published stable release. No undocumented experimental
+policy fields are accepted. Runtime mode switching, generic adapter loading,
+per-executable grants and browser/delegation adapters are design-only/deferred
+and are not configuration options. Automatic data routing and sanitization are
+also deferred; the execution eligibility declaration and release seam are stable.

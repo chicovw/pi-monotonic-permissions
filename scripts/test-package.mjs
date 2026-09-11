@@ -12,7 +12,7 @@ try {
   // Only development harness files are overlaid. Runtime modules come exclusively from the tarball.
   for (const path of ['tests', 'tsconfig.json']) await cp(path, join(unpacked, path), { recursive: true });
   await symlink(resolve('node_modules'), join(unpacked, 'node_modules'), 'dir');
-  for (const name of ['index', 'config', 'requests', 'paths', 'policy', 'bash', 'inspection']) {
+  for (const name of ['index', 'config', 'requests', 'paths', 'policy', 'bash', 'inspection', 'grants', 'custom-tools', 'eligibility', 'pi-runtime']) {
     assert.deepEqual(await readFile(join(unpacked, `src/${name}.ts`)), await readFile(`src/${name}.ts`));
   }
   execFileSync(process.execPath, [resolve('node_modules/typescript/bin/tsc'), '--noEmit'], { cwd: unpacked, stdio: 'inherit' });

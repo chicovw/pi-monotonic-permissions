@@ -2,69 +2,146 @@
 
 ```mermaid
 flowchart TD
-  A[Pi tool_call] --> B[Validate request shape]
-  B --> C[Normalize and canonicalize explicit paths]
-  C --> D[Bounded inspection preflight when applicable]
-  D --> E[Evaluate global policy independently]
-  D --> F[Evaluate project policy independently]
-  E --> G[Most restrictive decision]
-  F --> G
-  G --> H{ALLOW / ASK / DENY}
-  H -->|ALLOW| I[Pi executes native tool]
-  H -->|DENY| J[Block without approval]
-  H -->|ASK| K[Cancel-first one-shot dialog]
-  K --> L[Recheck request, policy and target identities]
-  L -->|unchanged and still ASK| I
-  L -->|changed, declined or failed| J
+  O[Human operator] --> M[Startup mode: guarded / trusted / YOLO]
+  O --> G[Grants: once / session / persistent]
+  O --> P[Global policy and execution declarations]
+  C[Context/history and requested tool] --> A[Adapter: classify exposure and canonical targets]
+  A --> R[Resolve post-auth provider / API / endpoint]
+  P --> L{Classification eligibility and authority protection}
+  J[Project: lower ceiling / tighten policy] --> L
+  R --> L
+  L -->|ineligible| B[Block without approval]
+  L -->|eligible| Y{Startup YOLO?}
+  M --> Y
+  Y -->|yes: ordinary policy bypass| H[Raise session classification if needed]
+  Y -->|no| E[Global and project policy: maximum severity]
+  P --> E
+  J --> E
+  E -->|DENY| B
+  E -->|ALLOW| H
+  E -->|ASK| Q[Match scoped grant or ask operator]
+  G --> Q
+  Q --> V[Recheck session / request / policy / route / targets / contract]
+  V -->|authorized and unchanged| H
+  V -->|declined / changed / failed| B
+  H --> X[Pi executes tool]
+  X --> F[Post-auth eligibility rechecked before provider receives context]
 ```
+
+
+Tool policy governs model-requested invocation. It does not sandbox trusted
+extension JavaScript. Installing an extension still requires source/package
+review. An extension can execute independently of its model-facing tools.
 
 ## Modules
 
 | Module | Responsibility |
 |---|---|
-| `index.ts` | Public Pi hooks, session snapshots, serialized approvals, revalidation, receipts and optional diagnostic sink |
-| `config.ts` | Strict JSON validation, scope anchoring, canonical policy loading and deep freezing |
-| `requests.ts` | Validate native tool argument shapes and describe required operations |
-| `paths.ts` | Lexical/canonical identities, component-aware containment, prospective writes and readable-file checks |
-| `policy.ts` | Pure restriction evaluation and max composition |
-| `bash.ts` | Bounded literal tokenization, ordinary/consequential classification |
-| `inspection.ts` | Target/subtree read-policy preflight for recognized Bash inspection |
+| `eligibility.ts` | Strict classification declarations and pure context-release eligibility |
+| `pi-runtime.ts` | Version-pinned post-authentication, pre-provider request veto |
+| `index.ts` | Pi hooks, startup mode, session snapshots, serialized approvals, grant application, receipts/status |
+| `config.ts` | Strict JSON, scope anchoring, canonical policy loading and freezing |
+| `requests.ts` | Native shape validation and explicit target operations |
+| `custom-tools.ts` | Small explicit reviewed registry, recall classification, unknown JSON validation and contract fingerprints |
+| `grants.ts` | Stable identities and bounded owner-only mutable grant storage |
+| `paths.ts` | Lexical/canonical identities, prospective destinations and readable-file checks |
+| `policy.ts` | Pure restriction evaluation and maximum composition |
+| `bash.ts` | Bounded literal command classification |
+| `inspection.ts` | Target/subtree preflight for recognized Bash inspection |
 
-The host API surface is `session_start`, `session_shutdown`, `tool_call`,
-`tool_result`, `turn_end`, `ui.select` and `ui.setStatus`. Runtime imports are
-Node standard-library and relative modules; Pi types are erased. No tool is
-replaced, no argument rewritten and no active-tool list reconstructed.
+Runtime imports are Node standard-library and relative modules; Pi type imports
+are erased. No runtime dependency, tool replacement, argument rewrite, active-tool
+reconstruction or general adapter plugin framework is introduced.
 
-## Authority
+## Policy, grants and mode
 
-Destructively merging a project object over a global object could replace DENY
-with ALLOW. Instead each layer yields a decision and reasons; their maximum wins.
-The same order applies to tool, scope, protected and command restrictions within
-a layer. Guarded adds ASK for native writes/edits. Trusted contributes no extra
-restriction and cannot remove an explicit global ASK or DENY.
+Eligibility is evaluated first using `PUBLIC < INTERNAL < PRIVATE < SECRET`.
+The route ceiling is authoritative; a project may lower it, never raise it.
+`mayReleaseContext` is the small pure contract available to future routing or
+delegation. Missing labels, unsupported runtime identity and invalid declarations
+fail closed. V1.3 does not select routes or sanitize data.
 
-An absent project policy is neutral. A present malformed/inaccessible policy is
-not absent: loading leaves the gate blocking. Policy files, the extension source
-and recognized aliases to them are protected against explicit native mutation.
-A policy-file identity/revision change blocks subsequent calls until a new
-snapshot. This is not filesystem immutability against arbitrary host programs.
+Global/project policy is evaluated independently with `ALLOW < ASK < DENY`.
+Missing project fields are neutral. Neither grants nor project configuration can
+remove a global DENY. Native canonical checks, protected paths and consequential
+Bash classification retain their prior enforcement in guarded/trusted modes.
 
-## State and approvals
+The global `profile` field remains a compatible operator-managed mode default.
+A captured startup environment selection takes precedence over that default;
+explicit tool/path/custom rules still apply in guarded/trusted. YOLO bypasses
+ordinary policy approval only after eligibility. It does not declassify context
+or bypass classification restrictions.
+There is no runtime mode command or tool. Footer status continuously identifies
+YOLO. Direct host execution remains outside this boundary in every mode.
 
-Runtime state consists of a frozen snapshot, session epoch, pending approval
-queue, abort signal and short-lived receipt map. No persistent approval database,
-hot reload, model routing, network service or telemetry is implemented. Diagnostic
-callbacks are off by default and omit payloads and command strings.
+Loaded policies are frozen. Policy identity/revision changes block until restart.
+Recognized explicit native mutations of policy, source and grant storage are
+blocked in every mode. Current session metadata and recognized deletion of authority
+ancestors are also protected. This does not make files immutable against arbitrary approved programs.
 
-Only ASK reaches the TUI. The selected response must be exactly `Allow once`.
-The request digest, session epoch, policy identities and complete action are
-checked again. The result must still be ASK and unchanged. Receipts are consumed
-by tool-call ID and cleared at turn/session boundaries; they carry no authority.
+## Approval and grant state
 
-## Initialization boundary
+State includes a session epoch, abort signal, approval queue, receipt map and
+memory-only custom session grants. Pi 0.85.1 emits session shutdown/start for new,
+resume, fork and reload, clearing session authority. Once approvals recheck the
+complete action, input, epoch, mode and policy snapshot before one execution.
 
-A successfully imported module installs its hooks even if its policy cannot
-load. Every tool call then blocks. Pi can also continue after a *module import*
-error, in which case no gate exists. Startup resource display and a synthetic
-protected-read check distinguish these cases. The package does not supply a
-mandatory launcher or attempt to enforce its own installation.
+Native/Bash ASK retains one-shot approval. Custom session grants bind to reviewed
+operation identity; unknown tools instead bind exact normalized arguments. Only
+reviewed recall with readable source metadata offers Always Allow. Persistent
+records contain tool/operation names and hashes for contract and context. They
+are evaluated only after effective policy ASK and never mutate policy.
+
+Context hashes include canonical cwd, policy-file identity/revision and mode.
+Contract hashes include adapter version, exposed schema/description/source
+metadata and entry-file content. This deliberately invalidates on some harmless
+changes too. It does not attest transitive implementation, package authenticity,
+configuration or external behavior. Installation review is still required.
+
+The owner-only JSON file is read when matching ASK, so deletion/revocation takes
+effect without a policy reload. Writes use a same-directory temporary file and
+atomic rename. Concurrent Pi processes can conservatively lose a convenience
+update; no cross-process transaction/locking service is supplied. The file has
+at most 128 grants. Disk/format/permission failures block the affected ASK.
+
+## Blackhole-specific boundary
+
+A matching 0.5.3 schema classifies `scope: "all"` as `recall.allLineages`, all other
+validated scopes as `recall.activeLineage`. Query text is not a hidden scope field.
+Before active-lineage authorization, the gate requires a nonempty valid branch
+from Pi. This prevents Blackhole's empty/error branch fallback to all entries.
+An in-process extension racing or replacing those APIs remains trusted code.
+
+Recall returns prior session information; native filesystem policy does not
+filter history. Cross-environment sanitization and automatic routing are deferred;
+the explicit release eligibility gate is implemented.
+
+## Initialization failure
+
+A loaded gate with invalid policy or execution declarations blocks in all modes. An import failure
+means no gate exists. Check the extension list and footer. Neither this package
+nor its grants provide a mandatory launcher, process containment or telemetry.
+
+## Resolved execution seam and classification lifetime
+
+The exported `mayReleaseContext` contract rejects SECRET and classifications above
+the route ceiling. Project/global ceilings compose using the lower ceiling.
+`index.ts` matches the effective provider/API/base URL against operator-declared
+routes. The runtime label is operator attestation, not discovered package or
+process provenance; model names never determine eligibility.
+
+Pi 0.85.1 swallows exceptions in public provider hooks. The qualified integration
+therefore wraps the private `ModelRuntime.prepareRequest` method, after auth
+resolves endpoint overrides and before provider invocation. Only the reviewed
+`openai-completions` path is supported. Runtime replacement invalidates old
+wrappers; session shutdown leaves a rejecting wrapper. This is a maintenance
+boundary, not a promise of compatibility with future Pi versions or arbitrary
+providers. See [the source review](pi-eligibility-seam-review.md).
+
+The context floor includes global/project context and history declarations and
+all recorded admission labels. Tool exposure can raise it; compaction does not
+lower it. Only classification metadata is appended to the Pi session. On resume,
+all such labels are included conservatively. This prevents a later hosted route
+from receiving already admitted PRIVATE context under a lower current default.
+It cannot detect an incorrect operator classification, a secret pasted into
+PUBLIC-labelled input, or an installed extension bypassing the runtime altogether.

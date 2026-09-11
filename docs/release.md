@@ -4,44 +4,20 @@ No external repository, tag, release or registry publication is created by this
 checklist. Execute only after reviewing the package. Keep the existing internal
 consumer unchanged until a separate migration decision.
 
-## Before public hosting
+## V1.3 human gates
 
-- Replace every `OWNER` in package metadata and documentation with the intended
-  GitHub owner; do not guess another person's namespace.
-- Confirm the contributor copyright designation in LICENSE and your authority
-  to license the code. The source review found no vendored third-party blocks or
-  retained license notices; this is not proof of originality against all software.
-- Choose a repository, enable GitHub private vulnerability reporting and replace
-  the staging reporting paragraph in SECURITY.md with the actual private route.
-- Review the exact files in `npm run check:package`. Do not copy caches, logs,
-  session files, installed node_modules or a real global policy into the repository.
-- Run the matrix in CI before claiming Linux compatibility. Local evidence is
-  macOS arm64 only. Package/Pi compatibility is qualified at 0.85.1, not all peers.
+The public identity is `github.com/chicovw/pi-monotonic-permissions`.
+Prepare and validate locally, then stop without staging or committing. The human
+reviews the exact diff, commits and pushes, and supplies the remote SHA. Only then
+may a separately authorized configuration task repin that SHA. Do not treat this
+checklist as authorization to create repositories, branches, tags or releases.
 
-## Create and push the reviewed repository (human only)
+Before a public release, verify private vulnerability reporting at the repository,
+review package contents and run remote CI before claiming Linux compatibility.
+Keep credentials, runtime grants, sessions and operator policy out of source.
 
-From the standalone directory, after setting metadata and reviewing changes:
-
-```sh
-gh auth status
-# If unavailable, authenticate through the normal GitHub CLI flow, then recheck.
-# Replace OWNER before running:
-repo_slug=OWNER/pi-monotonic-permissions
-npm ci --ignore-scripts
-npm run validate
-git init -b main
-git add .
-git diff --cached --check
-git diff --cached --stat
-git commit -m "Prepare pi-monotonic-permissions 0.1.0"
-gh repo create "$repo_slug" --public --description "Deterministic, monotonic permission enforcement for Pi tool calls."
-git remote add origin "git@github.com:${repo_slug}.git"
-git push -u origin main
-```
-
-Enable private reporting under repository settings and confirm the Security tab
-provides the reporting link. Review the CI run; do not publish with failed checks.
-Apply topics from presentation.md in repository About settings.
+Suggested commit subject: `Add V1.3 extensible tool governance, grants and operator YOLO`.
+Package semantic version remains 0.1.0; the V1.3 development label is not a tag.
 
 ## Tag and release later (human only)
 

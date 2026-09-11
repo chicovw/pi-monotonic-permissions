@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { fixture, context, request, policy } from './fixtures.ts';
 import { parsePolicy } from '../src/config.ts';
 import { describe } from '../src/requests.ts';
-import extension, { createGate } from '../src/index.ts';
+import extension from '../src/index.ts';
+import { createGate } from './gate-fixture.ts';
 
 const daily = JSON.parse(await readFile(new URL('./fixtures/daily-policy.json', import.meta.url), 'utf8'));
 const bash = (command: string) => ({ toolName: 'bash', toolCallId: 'catalogue', input: { command } });
@@ -60,14 +61,14 @@ for (const profile of ['guarded', 'trusted', 'yolo']) test(`project cannot selec
   await f.setProject({ version: 1, profile });
   assert.match((await (await f.gate()).call(request('read', 'safe.txt'), context(f.cwd)))!.reason, /EVALUATION_FAILED/);
 });
-test('no runtime switch surface, invalid and design-only YOLO selection fail closed', async t => {
+test('no runtime switch surface; declarative YOLO and invalid profile selection fail closed', async t => {
   const f = await fixture(); t.after(f.cleanup);
   for (const profile of ['yolo', 'invalid', null, {}]) await assert.rejects(parsePolicy({ ...daily, profile }, f.cwd, true));
   const handlers: string[] = [];
   extension({ on: (name: string) => { handlers.push(name); } } as any);
   assert.ok(handlers.includes('tool_call')); // registerTool/registerCommand are deliberately unavailable.
   const gate = await f.gate();
-  assert.match((await gate.call({ toolName: 'permissions', toolCallId: 'escalate', input: { profile: 'yolo' } }, context(f.cwd)))!.reason, /UNSUPPORTED_TOOL/);
+  assert.match((await gate.call({ toolName: 'permissions', toolCallId: 'escalate', input: { profile: 'yolo' } }, context(f.cwd)))!.reason, /POLICY_DENY/);
   assert.equal(gate.profile(), 'legacy');
 });
 test('loaded profile is an immutable snapshot; editing policy blocks instead of switching', async t => {

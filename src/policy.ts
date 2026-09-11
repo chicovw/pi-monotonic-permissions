@@ -1,4 +1,5 @@
 import { componentMatch, inside } from './paths.ts';
+import type { ExecutionConfig } from './eligibility.ts';
 import type { Command } from './bash.ts';
 import type { Target } from './paths.ts';
 
@@ -14,17 +15,20 @@ export interface Rule {
   decisions: Partial<Record<Operation, Decision>>;
 }
 export interface Policy {
+  execution?: Partial<ExecutionConfig>;
   profile?: 'guarded' | 'trusted';
   tools: Partial<Record<'read' | 'write' | 'edit' | 'bash', Decision>>;
   paths?: { roots: Target[]; inside: Partial<Record<Operation, Decision>>; outside: Partial<Record<Operation, Decision>>; protected: Rule[] };
   protected: Rule[];
   bash: { unknown?: Decision; ordinary: { argv: string[]; decision: Decision }[]; destructive: Record<string, Decision> };
   publication: Record<string, Decision>;
+  customTools?: { unknown?: Decision; recall?: Decision; operations?: Partial<Record<'recall.activeLineage' | 'recall.allLineages', Decision>> };
 }
 export interface Action {
   tool: string;
   targets: { target: Target; operations: Operation[] }[];
   commands?: Command[];
+  custom?: { reviewed: boolean; operation: string; contract: string; persistent: boolean; lineage?: string };
 }
 
 const severity: Record<Decision, number> = { ALLOW: 0, ASK: 1, DENY: 2 };
@@ -45,6 +49,20 @@ export function evaluate(policy: Policy, action: Action, layer: 'global' | 'proj
     if (decision && decision !== 'ALLOW') reasons.push({ decision, layer, code });
   };
   const tool = action.tool === 'grep' ? 'read' : action.tool;
+  if (action.custom) {
+    const c = policy.customTools;
+    if (action.tool === 'recall') add(c?.recall, 'CUSTOM_TOOL');
+    if (action.custom.reviewed) {
+      add(c?.operations?.[action.custom.operation as 'recall.activeLineage' | 'recall.allLineages']
+        ?? (layer === 'global' ? (action.custom.operation === 'recall.activeLineage' && policy.profile === 'trusted' ? 'ALLOW' : 'ASK') : undefined), 'CUSTOM_OPERATION');
+    } else {
+      // A changed/unrecognized recall contract cannot escape existing recall
+      // operation restrictions by becoming an unknown tool.
+      if (action.tool === 'recall') for (const d of Object.values(c?.operations ?? {})) add(d, 'CUSTOM_OPERATION');
+      add(c?.unknown ?? (layer === 'global' ? (policy.profile === 'trusted' ? 'ASK' : 'DENY') : undefined), 'CUSTOM_UNKNOWN');
+    }
+    return { decision: mostRestrictive(...reasons.map(r => r.decision)), reasons };
+  }
   add(policy.tools[tool as keyof Policy['tools']], 'TOOL');
   if (action.commands?.some(command => command.scan)) add(policy.tools.read, 'TOOL');
   if (policy.profile === 'guarded' && ['write', 'edit'].includes(action.tool)) add('ASK', 'PROFILE_GUARDED');

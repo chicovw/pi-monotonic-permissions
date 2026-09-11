@@ -1,3 +1,4 @@
+import { parseExecution } from './eligibility.ts';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
@@ -64,10 +65,11 @@ export function parseJson(source: string): unknown {
 }
 
 export async function parsePolicy(value: unknown, cwd: string, global: boolean): Promise<Policy> {
-  const raw = object(value, ['version', 'tools', 'paths', 'bash', 'publication', ...(global ? ['profile'] : [])]);
+  const raw = object(value, ['version', 'tools', 'paths', 'bash', 'publication', 'customTools', 'execution', ...(global ? ['profile'] : [])]);
   if (raw.version !== 1) throw new Error('POLICY_VERSION');
   if (global && ['tools', 'paths', 'bash', 'publication'].some(k => !(k in raw))) throw new Error('POLICY_REQUIRED');
   const policy: Policy = { tools: {}, protected: [], bash: { ordinary: [], destructive: {} }, publication: {} };
+  if (raw.execution !== undefined) policy.execution = parseExecution(raw.execution, global);
   if (raw.profile !== undefined) {
     if (raw.profile !== 'guarded' && raw.profile !== 'trusted') throw new Error('POLICY_PROFILE');
     policy.profile = raw.profile;
@@ -117,6 +119,17 @@ export async function parsePolicy(value: unknown, cwd: string, global: boolean):
     }
   }
   if (raw.publication !== undefined) policy.publication = decisions(raw.publication, publicationCategories);
+  if (raw.customTools !== undefined) {
+    const c = object(raw.customTools, ['unknown', 'recall', 'operations']);
+    policy.customTools = {};
+    if (c.unknown !== undefined) {
+      policy.customTools.unknown = decision(c.unknown);
+      // Unknown semantics cannot acquire a blanket declarative ALLOW.
+      if (c.unknown === 'ALLOW') throw new Error('POLICY_UNKNOWN_ALLOW');
+    }
+    if (c.recall !== undefined) policy.customTools.recall = decision(c.recall);
+    if (c.operations !== undefined) policy.customTools.operations = decisions(c.operations, ['recall.activeLineage', 'recall.allLineages']);
+  }
   return freeze(policy);
 }
 

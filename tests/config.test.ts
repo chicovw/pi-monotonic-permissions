@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmod, symlink, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parsePolicy, parseJson, loadSnapshot } from '../src/config.ts';
-import { createGate } from '../src/index.ts';
+import { createGate } from './gate-fixture.ts';
 import { fixture, policy, context, request } from './fixtures.ts';
 
 for (const mutation of [

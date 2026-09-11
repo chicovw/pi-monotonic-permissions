@@ -78,5 +78,52 @@
     "gitForcePush": "DENY",
     "gitDeletePush": "DENY",
     "packagePublish": "DENY"
+  },
+  "customTools": {
+    "unknown": "DENY",
+    "recall": "ALLOW",
+    "operations": {
+      "recall.activeLineage": "ASK",
+      "recall.allLineages": "ASK"
+    }
+  },
+  "execution": {
+    "context": "PRIVATE",
+    "history": "PRIVATE",
+    "tools": {
+      "read": "PRIVATE",
+      "write": "PRIVATE",
+      "edit": "PRIVATE",
+      "grep": "PRIVATE",
+      "recall": "PRIVATE"
+    },
+    "routes": [
+      {
+        "provider": "omlx",
+        "api": "openai-completions",
+        "baseUrl": "http://127.0.0.1:8000/v1",
+        "runtime": "operator-approved-omlx",
+        "environment": "LOCAL_TRUSTED",
+        "ceiling": "PRIVATE"
+      }
+    ],
+    "protected": [
+      {
+        "component": ".env",
+        "classification": "SECRET"
+      },
+      {
+        "component": ".ssh",
+        "classification": "SECRET"
+      },
+      {
+        "component": "auth.json",
+        "classification": "SECRET"
+      },
+      {
+        "component": "grants.json",
+        "classification": "PRIVATE"
+      }
+    ]
   }
 }

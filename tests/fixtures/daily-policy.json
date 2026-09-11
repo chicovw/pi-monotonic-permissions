@@ -199,5 +199,22 @@
     "gitForcePush": "DENY",
     "gitDeletePush": "DENY",
     "packagePublish": "DENY"
+  },
+  "execution": {
+    "context": "PUBLIC",
+    "history": "PUBLIC",
+    "tools": {
+      "*": "PUBLIC"
+    },
+    "routes": [
+      {
+        "provider": "fixture-provider",
+        "api": "openai-completions",
+        "baseUrl": "http://127.0.0.1:9/v1",
+        "runtime": "offline-synthetic-fixture",
+        "environment": "LOCAL_TRUSTED",
+        "ceiling": "PRIVATE"
+      }
+    ]
   }
 }

@@ -4,7 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fixture, policy, request, context } from './fixtures.ts';
-import { createGate } from '../src/index.ts';
+import { createGate } from './gate-fixture.ts';
 
 test('strict native read-only includes Markdown, source, JSON and configuration', async t => {
   const f = await fixture(); t.after(f.cleanup); const p = policy(); p.tools.write = 'DENY'; p.tools.edit = 'DENY'; await f.setGlobal(p);

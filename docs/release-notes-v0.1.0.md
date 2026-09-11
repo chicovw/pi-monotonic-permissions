@@ -1,17 +1,18 @@
-Initial public release of pi-monotonic-permissions: deterministic, monotonic
-permission enforcement for Pi tool calls.
+# Draft release notes (unpublished)
 
-- Canonical protected-target and prospective write checks.
-- Independent global/project policy composition with ALLOW < ASK < DENY.
-- One-shot Cancel-first approvals; DENY cannot be approved away.
-- Fail-closed evaluation and bounded Git/publication classification.
-- Guarded/trusted declarative profiles and factual approval receipts.
-- No additional runtime dependencies or persistent approval database.
+The V1.3 development tree adds reviewed extension-tool governance, conservative
+unknown-tool fallback, scoped operator grants and explicit startup YOLO to the
+0.1.0 package candidate. No new published version is asserted.
 
-Qualified with Pi 0.85.1 on macOS arm64. The standalone deterministic/integration
-suite has 175 passing tests. The 0.x policy API may evolve before 1.0.
+Guarded/trusted retain canonical protected-target checks, monotonic global/project
+composition and fail-closed evaluation. Grants resolve only ASK, never DENY.
+Blackhole 0.5.3 recall is the first reviewed adapter and remains optional.
 
-This is a tool-call permission layer, not an OS sandbox. Approved programs retain
-host permissions; filesystem races, incomplete hard-link coverage, extension-load
-failure, other extensions and human shell operations remain documented limits.
-See README.md, SECURITY.md and docs/threat-model.md before use.
+YOLO bypasses ordinary model-tool approval only after execution-environment
+eligibility. Classification ceilings remain enforced, including the absolute
+SECRET denial. The extension does not sandbox installed JavaScript or approved
+programs. See README, SECURITY and evaluation evidence before use.
+
+Normal-profile Blackhole qualification passed against Pi 0.85.1 and the exact
+Blackhole 0.5.3 source using approved loopback-local oMLX. Do not publish these notes without reviewing
+the final source, validation and public claims.
