@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "profile": "guarded",
+  "tools": {
+    "read": "ALLOW",
+    "write": "ALLOW",
+    "edit": "ALLOW",
+    "bash": "ALLOW"
+  },
+  "paths": {
+    "roots": [
+      {
+        "base": "project",
+        "path": "."
+      }
+    ],
+    "inside": {
+      "read": "ALLOW",
+      "write": "ALLOW",
+      "edit": "ALLOW"
+    },
+    "outside": {
+      "read": "DENY",
+      "write": "DENY",
+      "edit": "DENY"
+    },
+    "protected": [
+      {
+        "component": ".env",
+        "read": "DENY",
+        "write": "DENY",
+        "edit": "DENY"
+      },
+      {
+        "component": ".ssh",
+        "read": "DENY",
+        "write": "DENY",
+        "edit": "DENY"
+      },
+      {
+        "component": "credentials.json",
+        "read": "DENY",
+        "write": "DENY",
+        "edit": "DENY"
+      }
+    ]
+  },
+  "bash": {
+    "unknown": "ASK",
+    "ordinary": [
+      {
+        "argv": [
+          "npm",
+          "test"
+        ],
+        "decision": "ALLOW"
+      },
+      {
+        "argv": [
+          "git",
+          "diff",
+          "--check"
+        ],
+        "decision": "ALLOW"
+      }
+    ],
+    "destructive": {
+      "gitResetHard": "DENY",
+      "gitClean": "DENY",
+      "gitDeleteRef": "DENY",
+      "gitRewrite": "DENY",
+      "recursiveDelete": "DENY",
+      "systemDestructive": "DENY"
+    }
+  },
+  "publication": {
+    "gitPush": "DENY",
+    "gitForcePush": "DENY",
+    "gitDeletePush": "DENY",
+    "packagePublish": "DENY"
+  }
+}

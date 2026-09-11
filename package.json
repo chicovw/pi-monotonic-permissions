@@ -1,0 +1,66 @@
+{
+  "name": "pi-monotonic-permissions",
+  "version": "0.1.0",
+  "description": "Deterministic, monotonic permission enforcement for Pi tool calls.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OWNER/pi-monotonic-permissions.git"
+  },
+  "homepage": "https://github.com/OWNER/pi-monotonic-permissions#readme",
+  "bugs": {
+    "url": "https://github.com/OWNER/pi-monotonic-permissions/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "permissions",
+    "policy",
+    "monotonic",
+    "canonical-paths",
+    "tool-calls"
+  ],
+  "files": [
+    "src/*.ts",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "policy.example.json",
+    "docs/architecture.md",
+    "docs/threat-model.md",
+    "docs/policy-reference.md",
+    "docs/evaluation.md",
+    "CONTRIBUTING.md",
+    "docs/claims-review.md"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check:package": "node scripts/check-package.mjs",
+    "test:package": "node scripts/test-package.mjs",
+    "validate": "npm run typecheck && npm test && npm run check:package && npm run test:package"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@types/node": "24.13.4",
+    "typescript": "5.9.3"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}
