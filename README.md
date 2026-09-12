@@ -2,7 +2,8 @@
 
 Deterministic, monotonic permission enforcement for Pi tool calls.
 
-V1.3 is an unreleased architecture update to the early `0.1.0` package candidate. It targets **Earendil Works Pi 0.85.1**, using Node 24
+V1.3.1 is an unreleased compatibility follow-up to the V1.3 architecture update
+in the early `0.1.0` package candidate. It targets **Earendil Works Pi 0.85.1**, using Node 24
 or later. There are no additional runtime dependencies. The policy schema is an
 early public API and may change before 1.0.
 
@@ -323,12 +324,14 @@ pins remain essential. Inspect/delete grants using the simple file operations in
 
 ## Validation and contributing
 
-The standalone suite contains **263 tests**, passed on macOS arm64 with Pi 0.85.1.
+The standalone suite contains **265 tests**, passed on macOS arm64 with Pi 0.85.1.
 It exercises policy, filesystem fixtures and real Pi tool interception using
 deterministic streams, with no provider service or credentials. The V1.2 runtime
 previously passed interactive 80x24/120x60 approval checks, a local-model
 coding workflow and a normal-profile activation smoke. Those are historical manual
-evidence, not portable CI claims. Linux CI is configured but not yet run here.
+evidence, not portable CI claims. GitHub CI at the pre-fix public commit passed
+on Ubuntu 24.04 and macOS 14. The V1.3.1 working tree must obtain its own green
+public CI result after the human gate.
 
 ```sh
 npm ci --ignore-scripts
@@ -354,3 +357,7 @@ resolves the endpoint. Only `openai-completions` is currently qualified. Route
 configuration attests the approved runtime at an exact provider/API/endpoint;
 it does not detect service replacement or prove an extension provider's network
 behavior. See [the seam review](docs/pi-eligibility-seam-review.md).
+The compatibility check reads Pi's public `VERSION` export. It requires exactly
+`0.85.1` in addition to the reviewed private runtime structure. Missing, malformed,
+or different version values fail closed. This avoids assuming the public package
+has a filesystem path when Pi loads extensions through its bundled virtual modules.

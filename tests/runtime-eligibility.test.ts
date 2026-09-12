@@ -83,6 +83,41 @@ test('unsupported API is denied before provider invocation', async t => {
   assert.equal(f.calls(), 0);
 });
 
+test('only the explicitly qualified Pi runtime version may reach structural checks', async t => {
+  const qualified = await runtimeFor(); t.after(() => rm(qualified.dir, { recursive: true, force: true }));
+  const qualifiedSeam = installRuntimeEligibility(qualified.registry, async () => {}, '0.85.1');
+  assert.deepEqual(await qualifiedSeam.resolve(qualified.runtime.getModel('fixture', 'fixture-model')),
+    { provider: 'fixture', api: 'openai-completions', baseUrl: 'http://127.0.0.1:8000/v1' });
+
+  for (const version of ['0.86.0', null, { version: '0.85.1' }]) {
+    const f = await runtimeFor(); t.after(() => rm(f.dir, { recursive: true, force: true }));
+    const seam = installRuntimeEligibility(f.registry, async () => {}, version);
+    await assert.rejects(() => seam.resolve(f.runtime.getModel('fixture', 'fixture-model')),
+      /EXECUTION_RUNTIME_UNAVAILABLE/);
+    assert.equal(f.calls(), 0);
+  }
+});
+
+test('missing prepareRequest, wrapper replacement, and unresolved routes fail closed', async t => {
+  assert.throws(() => installRuntimeEligibility({ runtime: {} } as any, async () => {}, '0.85.1'),
+    /EXECUTION_RUNTIME_UNSUPPORTED/);
+
+  const replaced = await runtimeFor(); t.after(() => rm(replaced.dir, { recursive: true, force: true }));
+  const seam = installRuntimeEligibility(replaced.registry, async () => {}, '0.85.1');
+  (replaced.runtime as any).prepareRequest = async () => { throw new Error('replacement must not run'); };
+  await assert.rejects(() => seam.resolve(replaced.runtime.getModel('fixture', 'fixture-model')),
+    /EXECUTION_RUNTIME_UNAVAILABLE/);
+  assert.equal(replaced.calls(), 0);
+
+  const unresolved = {
+    runtime: {
+      async prepareRequest() { return { model: { provider: 'fixture', api: 'openai-completions' }, provider: {}, options: {} }; }
+    }
+  };
+  const unresolvedSeam = installRuntimeEligibility(unresolved, async () => {}, '0.85.1');
+  await assert.rejects(() => unresolvedSeam.resolve(model), /EXECUTION_ROUTE_UNRESOLVED/);
+});
+
 test('missing runtime fails closed and shutdown keeps it denied', async () => {
   assert.throws(() => installRuntimeEligibility({} as any, async () => {}), /EXECUTION_RUNTIME_UNSUPPORTED/);
   const f = await runtimeFor();

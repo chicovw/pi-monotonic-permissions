@@ -125,6 +125,10 @@ npm run validate
 node scripts/test-blackhole.mjs /absolute/path/to/unpacked-pi-blackhole
 # Optional authorized local oMLX run, using only disposable synthetic history:
 BLACKHOLE_LOCAL_OMLX=1 node scripts/test-blackhole.mjs /absolute/path/to/unpacked-pi-blackhole
+# Optional V1.3.1 compatibility check against approved local inference:
+node scripts/test-cli-compat.mjs \
+  --policy /absolute/path/to/global-policy.json \
+  --unbundled /absolute/path/to/pi/dist/cli.js
 ```
 
 The harness copies Blackhole into disposable state, resolves the locked Pi 0.85.1
@@ -144,6 +148,10 @@ resolve it. `CLASSIFICATION_UNAVAILABLE` means exposure has not been declared.
 `EXECUTION_API_UNSUPPORTED` means the runtime is outside the currently qualified
 Pi 0.85.1 `openai-completions` path. Correct operator configuration and restart;
 do not loosen classification just to remove the denial.
+`EXECUTION_RUNTIME_UNAVAILABLE` means the public running Pi version is not the
+qualified `0.85.1`, is unavailable, or the installed request wrapper is no longer
+current. `EXECUTION_RUNTIME_UNSUPPORTED` means the reviewed private runtime method
+is absent. Neither condition is approvable.
 
 A session's classification can rise after tool admission. Its metadata persists
 through resume and compaction. Do not delete labels to reuse a private session

@@ -1,4 +1,15 @@
-## Unreleased - V1.3 development
+## Unreleased - V1.3.1 compatibility
+
+V1.3.1 is a compatibility follow-up within the unreleased V1.3 development
+line. Package metadata remains 0.1.0 pending the operator release gate.
+
+- Use Pi's public `VERSION` export for the explicit 0.85.1 runtime check.
+- Preserve the reviewed private `ModelRuntime.prepareRequest` structure check and
+  all fail-closed route, transport, classification, grant, and mode behavior.
+- Add version/structure regression coverage and a live bundled/unbundled CLI
+  qualification harness for approved local inference.
+
+## V1.3 development
 
 V1.3 is an architecture milestone, not a newly published semantic version.
 Package metadata remains 0.1.0 pending the operator release gate.

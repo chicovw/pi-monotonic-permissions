@@ -77,7 +77,7 @@ model-requested tool permission. Reviewed adapters and a conservative unknown-to
 fallback preserve operator control without blanket custom-tool ALLOW. This is an
 architecture correction, not a rollback of guarded/trusted invariants.
 
-The complete baseline passed before source edits. The V1.3 suite now has **263/263
+The complete baseline passed before source edits. The V1.3.1 suite now has **265/265
 passing tests**, including the original 175 cases. The obsolete test description
 that called YOLO design-only was updated: policy-file YOLO still rejects, while
 startup YOLO has its own tests. Its model `permissions` call still cannot change
@@ -104,6 +104,24 @@ orders, guarded/trusted and harmless synthetic YOLO. No provider is called.
 TypeScript, npm content validation and the full suite against an extracted tarball
 are separate checks. Historical interactive V1.2 UX evidence does not qualify the
 new four-choice V1.3 grant dialog at every terminal size.
+
+## V1.3.1 bundled CLI compatibility regression
+
+The V1.3 runtime-version check used `import.meta.resolve()` and an on-disk
+`package.json`. The normal bundled Pi CLI exposes the supported coding-agent
+module through its virtual extension loader, so the old source loaded but the
+first provider request returned `EXECUTION_RUNTIME_UNAVAILABLE`. The same old
+source completed through the unbundled CLI.
+
+V1.3.1 uses Pi's public `VERSION` export while retaining the independent private
+`runtime.prepareRequest` structure check. Unit tests cover the qualified version,
+wrong/missing/malformed versions, missing runtime/method, replacement, unresolved
+route, and unsupported transport. `scripts/test-cli-compat.mjs` is the live
+regression: with an operator-supplied synthetic policy and approved local model,
+it requires both the bundled and unbundled Pi 0.85.1 CLIs to complete a minimal
+inference request. The pre-fix source fails its bundled assertion; the corrected
+source returns `OK` through both paths. This is compatibility evidence, not a
+policy or classification change.
 
 ## Exact Blackhole 0.5.3 evaluation
 

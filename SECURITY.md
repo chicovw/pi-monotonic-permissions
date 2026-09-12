@@ -101,8 +101,11 @@ In every mode, an in-scope defect includes approving a correctly classified
 resource above the resolved ceiling, weakening a global ceiling through project
 configuration, a grant overriding classification denial, or forgetting an admitted
 session classification on resume. The pure contract and the Pi 0.85.1 post-auth
-request veto are tested separately. Other Pi versions are unsupported; a module
-that cannot load cannot supply a request veto.
+request veto are tested separately. Runtime qualification requires Pi's public
+`VERSION` value to equal `0.85.1` and the reviewed private `prepareRequest`
+structure to exist. Missing, malformed, or different versions and missing runtime
+structure fail closed. Other Pi versions are unsupported; a module that cannot
+load cannot supply a request veto.
 
 The operator supplies classifications and attests the runtime at the exact
 provider/API/endpoint. This is not secret detection, a service authenticity check,

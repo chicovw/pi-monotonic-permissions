@@ -1,6 +1,4 @@
-import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { VERSION as runningPiVersion } from '@earendil-works/pi-coding-agent';
 
 export interface RuntimeIdentity { provider: string; api: string; baseUrl: string }
 type Model = RuntimeIdentity & { [key: string]: unknown };
@@ -12,18 +10,16 @@ type Runtime = { prepareRequest(model: Model, options?: unknown): Promise<Prepar
  * Auth values remain inside Pi. Only the post-auth endpoint identity leaves here.
  * This governs this runtime's provider calls, not arbitrary extension JavaScript.
  */
-export function installRuntimeEligibility(registry: unknown, authorize: (identity: RuntimeIdentity) => Promise<void>) {
+export function installRuntimeEligibility(registry: unknown, authorize: (identity: RuntimeIdentity) => Promise<void>, runtimeVersion: unknown = runningPiVersion) {
   const runtime = (registry as { runtime?: Runtime } | undefined)?.runtime;
   if (!runtime || typeof runtime.prepareRequest !== 'function') throw new Error('EXECUTION_RUNTIME_UNSUPPORTED');
   const previous = (runtime.prepareRequest as unknown as Record<symbol, { original: Runtime['prepareRequest']; shutdown(): void }>)[boundaryKey];
   const original = previous?.original ?? runtime.prepareRequest;
   previous?.shutdown();
   let active = true;
-  let compatible = false;
-  try {
-    const entry = fileURLToPath(import.meta.resolve('@earendil-works/pi-coding-agent'));
-    compatible = JSON.parse(readFileSync(join(dirname(entry), '..', 'package.json'), 'utf8')).version === '0.85.1';
-  } catch { /* The installed wrapper still denies requests. */ }
+  // Pi's public version value survives bundled virtual-module loading. It does
+  // not replace the independent private runtime-structure check above.
+  const compatible = runtimeVersion === '0.85.1';
   const identity = (prepared: Prepared): RuntimeIdentity => {
     const m = prepared?.model;
     if (!m || typeof m.provider !== 'string' || typeof m.api !== 'string' || typeof m.baseUrl !== 'string') throw new Error('EXECUTION_ROUTE_UNRESOLVED');

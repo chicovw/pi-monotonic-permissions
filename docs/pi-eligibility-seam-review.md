@@ -2,6 +2,13 @@
 
 Reviewed against the installed `@earendil-works/pi-coding-agent` 0.85.1 and its nested `@earendil-works/pi-ai` 0.85.1 package. The installed package metadata identifies the upstream repository as `https://github.com/earendil-works/pi` and the coding-agent package directory as `packages/coding-agent`.
 
+V1.3.1 also reviewed the public runtime identity available to extensions. Pi's
+tagged `packages/coding-agent/src/index.ts` re-exports `VERSION` from `config.ts`,
+and `config.ts` derives it from the running package metadata. The installed
+`dist/index.js` and `dist/index.d.ts` expose the same value. Both Pi's bundled
+virtual-module loader and its unbundled loader return `"0.85.1"` for
+`@earendil-works/pi-coding-agent`'s public `VERSION` export.
+
 ## Finding
 
 The smallest useful seam is a bounded wrapper around Pi 0.85.1's private `ModelRuntime.prepareRequest(model, options)` method, implemented in this repository's `src/pi-runtime.ts`. `prepareRequest` runs after authentication resolution, auth `baseUrl` override, header/environment merging, and provider selection, but before the prepared request is handed to `provider.stream` or `provider.streamSimple`. `ModelRuntime.streamSimple` itself is before auth resolution and is not sufficient.
@@ -51,13 +58,25 @@ ceiling. The runtime label is not discovered process or package provenance.
 Operator grants apply only after eligibility succeeds. Route changes and later
 provider requests are rechecked against the conservative session classification.
 
+Runtime qualification requires two independent facts: the public Pi `VERSION`
+must equal the explicitly reviewed `0.85.1`, and the registry must expose the
+reviewed private `runtime.prepareRequest` structure. V1.3 previously found the
+version by resolving the public package to an on-disk `package.json`. That worked
+through unbundled Pi but failed closed in the bundled CLI, whose supported public
+module is virtual rather than filesystem-backed. V1.3.1 consumes `VERSION`
+directly and retains the structure check. Unknown versions, missing values,
+missing runtime methods, wrapper replacement, unresolved routes, and unsupported
+API transports remain fail closed.
+
 ## Conclusion
 
-Pi 0.85.1 provides a useful request construction path, but its extension events are observability/transformation hooks rather than a fail-closed authorization mechanism. The robust V1.3 seam is the pinned, version-checked wrapper at post-auth private `ModelRuntime.prepareRequest`, with an explicit route descriptor and deny-by-default eligibility. Unsupported APIs and unapproved provider/API/endpoint triples remain ineligible.
+Pi 0.85.1 provides a useful request construction path, but its extension events are observability/transformation hooks rather than a fail-closed authorization mechanism. The robust V1.3.1 seam combines Pi's public version value with the pinned post-auth private `ModelRuntime.prepareRequest` structure, an explicit route descriptor, and deny-by-default eligibility. Unsupported APIs and unapproved provider/API/endpoint triples remain ineligible.
 The wrapper does not independently authenticate provider code or transport behavior. The seam must be requalified for every Pi version update and cannot claim to intercept arbitrary extension network activity.
 
 Primary source links:
 
 - [Pi repository, 0.85.1 package source](https://github.com/earendil-works/pi/tree/v0.85.1/packages/coding-agent)
+- [Pi 0.85.1 public exports](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/index.ts)
+- [Pi 0.85.1 VERSION definition](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/config.ts)
 - [Pi extension documentation/source](https://github.com/earendil-works/pi/tree/v0.85.1/packages/coding-agent/src/core/extensions)
 - [Pi AI request types](https://github.com/earendil-works/pi/tree/v0.85.1/packages/ai/src)
