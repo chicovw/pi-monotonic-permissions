@@ -361,3 +361,6 @@ The compatibility check reads Pi's public `VERSION` export. It requires exactly
 `0.85.1` in addition to the reviewed private runtime structure. Missing, malformed,
 or different version values fail closed. This avoids assuming the public package
 has a filesystem path when Pi loads extensions through its bundled virtual modules.
+### Delegated execution eligibility
+
+Delegation controllers may use the side-effect-free `mayReleaseContext` export to check whether already-classified context may be released to an already-resolved execution route. The seam performs no routing, process launch, policy mutation, or grant mutation. It enforces the same classification ceilings and SECRET restriction as the runtime gate; ordinary tool policy and delegated capability resolution remain separate concerns.

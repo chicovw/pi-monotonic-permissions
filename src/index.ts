@@ -19,6 +19,15 @@ import type { Classification } from './eligibility.ts';
 import { installRuntimeEligibility } from './pi-runtime.ts';
 import type { RuntimeIdentity } from './pi-runtime.ts';
 
+/**
+ * Stable, side-effect-free integration seam for delegated execution controllers.
+ *
+ * This answers only whether already-classified context may be released to an already-resolved
+ * execution route. It does not select a model, launch a process, change policy, or mutate grants.
+ */
+export { mayReleaseContext, maxClassification, minCeiling } from './eligibility.ts';
+export type { Classification, Ceiling, ResolvedRoute, ExecutionConfig, ProjectExecutionConfig } from './eligibility.ts';
+
 type Context = Pick<ExtensionContext, 'cwd' | 'mode' | 'hasUI'> & {
   ui: Pick<ExtensionContext['ui'], 'select'>;
   model?: ExtensionContext['model'];
