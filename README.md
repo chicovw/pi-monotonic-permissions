@@ -193,15 +193,19 @@ secret material, and is never normally sent to a generative route.
 
 Use schema V2 for a global policy that supports PUBLIC sessions. Its `execution`
 object requires `defaultClassification`, `opaqueTools`, and `routes`. Normal
-`pi` should use `defaultClassification: "PRIVATE"`. A declarative, operator-owned
-PUBLIC launcher must start a new Pi session and set exactly:
+`pi` may use `defaultClassification: "PRIVATE"` as its policy fallback. The
+PMP extension registers classification flags; a fresh PUBLIC launch is:
 
 ```sh
-PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION=PUBLIC pi --no-session
+pi --public
 ```
 
-The value is captured once as case-sensitive `PUBLIC`, `INTERNAL`, or `PRIVATE`.
-Malformed values block. It is intentionally distinct from
+The available flags are `--public`, `--private`, and `--secret`. With no flag,
+V2 launches default to PUBLIC; `--secret` intentionally makes normal generative
+routes ineligible. The equivalent environment contract is
+`PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION=PUBLIC|INTERNAL|PRIVATE|SECRET`.
+The value is captured once and is case-sensitive. Malformed values or multiple
+classification flags block. It is intentionally distinct from
 `PI_MONOTONIC_PERMISSIONS_CONTEXT_CLASSIFICATION`, which a trusted controller may
 use to carry already-approved parent context into a child. There is no runtime
 downgrade command. A PUBLIC wrapper that resumes a PRIVATE session stays PRIVATE.

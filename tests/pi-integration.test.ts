@@ -250,7 +250,7 @@ test('actual Pi V2 captures direct fresh PUBLIC selection separately from its PR
     delete process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION;
     const defaultSession = await sessionFor(f, ['read']); t.after(() => defaultSession.session.dispose());
     const defaultLabels = defaultSession.session.sessionManager.getEntries().filter((e: any) => e.customType === 'pi-monotonic-permissions.classification');
-    assert.deepEqual((defaultLabels.at(-1) as any).data, { classification: 'PRIVATE' });
+    assert.deepEqual((defaultLabels.at(-1) as any).data, { classification: 'PUBLIC' });
   } finally {
     if (prior === undefined) delete process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION;
     else process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION = prior;

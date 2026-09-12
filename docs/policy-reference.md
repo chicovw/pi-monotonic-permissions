@@ -67,8 +67,12 @@ identity. `bash`, recall, unknown extensions, and every other opaque operation
 require an `opaqueTools` exact or `"*"` label. Omitted opaque labels deny. This is
 an operator assertion about complete exposure, not a sandbox proof.
 
-At initialization PMP captures `PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION`
-only as a case-sensitive `PUBLIC`, `INTERNAL`, or `PRIVATE` fresh-session choice.
+At initialization PMP captures a fresh-session choice from the mutually exclusive
+Pi flags `--public`, `--private`, and `--secret`, or from
+`PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION` with a case-sensitive
+`PUBLIC`, `INTERNAL`, `PRIVATE`, or `SECRET` value. With no flag, V2 launches
+default to PUBLIC. `SECRET` is an explicit non-generative posture: normal routes
+remain ineligible.
 It is separate from `PI_MONOTONIC_PERMISSIONS_CONTEXT_CLASSIFICATION`, which is a
 parent-approved inherited child label and may also be `SECRET`. Both malformed
 values fail closed. Neither is model-callable or runtime mutable. V2 persists an

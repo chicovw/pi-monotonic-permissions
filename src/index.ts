@@ -45,7 +45,7 @@ export interface GateOptions {
   /** V1 API compatibility. Prefer sessionClassification for a fresh operator launch. */
   startupClassification?: unknown;
   /** Trusted fresh-process operator selection. It is not child context handoff. */
-  sessionClassification?: unknown;
+  sessionClassification?: unknown | (() => unknown);
   /** Parent-approved context released into a child process. */
   inheritedClassification?: unknown;
 }
@@ -214,13 +214,16 @@ export function createGate(globalPath: string | undefined, diagnostics?: (event:
         if (!globalPath || !isAbsolute(globalPath)) return;
         const loaded = await loadSnapshot(globalPath, cwd);
         if (!loaded.global.execution) return;
-        const session = options.sessionClassification ?? options.startupClassification;
+        const sessionValue = typeof options.sessionClassification === 'function' ? options.sessionClassification() : options.sessionClassification;
+        const session = sessionValue ?? options.startupClassification;
         const parseSeed = (value: unknown, allowSecret: boolean) => {
           if (value === undefined) return undefined;
           if (typeof value !== 'string' || !['PUBLIC', 'INTERNAL', 'PRIVATE', 'SECRET'].includes(value) || (!allowSecret && value === 'SECRET')) throw new Error('CLASSIFICATION_SEED_INVALID');
           return value as Classification;
         };
-        const selected = parseSeed(session, false);
+        // SECRET is a valid explicit startup posture, but it makes every normal
+        // generative route ineligible. It is never a declassification mechanism.
+        const selected = parseSeed(session, true);
         const inherited = parseSeed(options.inheritedClassification, true);
         const stored = previousClassifications.map(value => parseSeed(value, true)!);
         const config = loaded.global.execution as import('./eligibility.ts').ExecutionConfig;
@@ -369,13 +372,27 @@ function approvalMessage(request: Request, cwd: string, action: Action, result: 
 }
 
 export default function piMonotonicPermissions(pi: ExtensionAPI) {
+  // Older synthetic extension harnesses may not expose Pi's 0.85 flag API.
+  const registerFlag = (name: string, description: string) => {
+    if (typeof (pi as unknown as { registerFlag?: unknown }).registerFlag === 'function') pi.registerFlag(name, { description, type: 'boolean' });
+  };
+  registerFlag('public', 'Start a fresh PUBLIC classification session');
+  registerFlag('private', 'Start a fresh PRIVATE classification session');
+  registerFlag('secret', 'Start a SECRET classification session (normal inference is denied)');
+  const selectedLaunchClassification = () => {
+    const getFlag = (pi as unknown as { getFlag?: (name: string) => boolean | string | undefined }).getFlag;
+    const selected = typeof getFlag === 'function' ? ['public', 'private', 'secret'].filter(name => getFlag(name) === true) : [];
+    if (selected.length > 1) return '__INVALID_CLASSIFICATION_FLAGS__';
+    if (selected.length === 1) return selected[0] === 'public' ? 'PUBLIC' : selected[0] === 'private' ? 'PRIVATE' : 'SECRET';
+    return process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION ?? 'PUBLIC';
+  };
   // Pi 0.85.1 getAgentDir convention, without a runtime SDK dependency.
   const rawAgentDir = process.env.PI_CODING_AGENT_DIR;
   const agentDir = rawAgentDir ? resolve(rawAgentDir.replace(/^~(?=\/|$)/, homedir())) : join(homedir(), '.pi', 'agent');
   let runtimeGate: ReturnType<typeof installRuntimeEligibility> | undefined;
   const gate = createGate(process.env.PI_MONOTONIC_PERMISSIONS_POLICY, undefined, evaluate, {
     mode: process.env.PI_MONOTONIC_PERMISSIONS_PROFILE,
-    sessionClassification: process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION,
+    sessionClassification: selectedLaunchClassification,
     inheritedClassification: process.env.PI_MONOTONIC_PERMISSIONS_CONTEXT_CLASSIFICATION,
     grantsPath: join(agentDir, 'pi-monotonic-permissions', 'grants.json'),
     toolInfo: name => pi.getAllTools().find(t => t.name === name),
