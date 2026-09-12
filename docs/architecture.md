@@ -146,3 +146,12 @@ all such labels are included conservatively. This prevents a later hosted route
 from receiving already admitted PRIVATE context under a lower current default.
 It cannot detect an incorrect operator classification, a secret pasted into
 PUBLIC-labelled input, or an installed extension bypassing the runtime altogether.
+# OpenAI Codex response backend
+
+Pi 0.85.1's `openai-codex-responses` provider has a distinct backend contract.
+Its normal automatic transport can use WebSocket and fall back to SSE. PMP does
+not treat it as `openai-completions`. The reviewed adapter accepts only provider
+`openai-codex` at `https://chatgpt.com/backend-api`, forces the exact HTTPS SSE
+endpoint `/codex/responses`, and rejects redirects. A policy route remains
+`HOSTED_CONTROLLED` with a `PUBLIC` ceiling. Other Codex base URLs, providers,
+APIs, and transport variants fail closed until separately reviewed.
