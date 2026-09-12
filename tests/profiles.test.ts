@@ -144,7 +144,7 @@ test('catalogue cannot override read/tool DENY or protected subtree; unsupported
   const f = await fixture(); t.after(f.cleanup); await f.setGlobal({ ...daily, tools: { ...daily.tools, read: 'DENY' } });
   const gate = await f.gate();
   for (const command of ['ls -la', 'rg safe safe.txt']) assert.match((await gate.call(bash(command), context(f.cwd)))!.reason, /POLICY_DENY/);
-  for (const [command, code] of [['rg safe safe.txt | head', 'UNSUPPORTED_PIPELINE'], ['ls > out', 'UNSUPPORTED_REDIRECTION'],
+  for (const [command, code] of [['pwd | cat', 'UNSUPPORTED_PIPELINE'], ['ls > out', 'UNSUPPORTED_REDIRECTION'],
     ['npm test && git diff', 'UNSUPPORTED_COMMAND_CHAIN'], ['ls $(pwd)', 'UNSUPPORTED_SUBSTITUTION']])
     assert.ok((await gate.call(bash(command), context(f.cwd)))!.reason.includes(code));
 });

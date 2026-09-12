@@ -139,7 +139,11 @@ may add a minimum, lower a ceiling, or add resource labels, but cannot create a
 project entry or lower any label. Resources select components, exact files, or
 trees with lexical and canonical path handling. Filesystem-native read, grep,
 find, ls, write and edit derive classification from all bounded exposed targets.
-Bash, recall and unknown extensions remain opaque operation-level declarations.
+The bounded Bash inspection grammar and exact globally reviewed validation entries
+do the same. Arbitrary Bash, recall and unknown extensions remain opaque
+operation-level declarations. Reviewed delegation is a control operation that
+preserves the parent high-water; its controller separately qualifies the child
+route through the broker.
 
 The live high-water is the maximum of selection/default, actual floors, project
 baseline, stored session labels, inherited child label, and admitted exposure.

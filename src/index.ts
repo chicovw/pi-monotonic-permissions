@@ -51,7 +51,7 @@ export interface GateOptions {
 }
 export interface Diagnostic { tool: string; decision: string; code: string; layer: string; approvalRequested: boolean; approvalResult?: 'granted' | 'declined' }
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const eligibilityErrors = new Set(['CLASSIFICATION_DENY', 'CLASSIFICATION_UNAVAILABLE', 'EXECUTION_ROUTE_UNRESOLVED', 'EXECUTION_RUNTIME_UNAVAILABLE', 'EXECUTION_RUNTIME_CHANGED', 'EXECUTION_API_UNSUPPORTED']);
+const eligibilityErrors = new Set(['CLASSIFICATION_DENY', 'CLASSIFICATION_UNAVAILABLE', 'EXECUTION_ROUTE_UNRESOLVED', 'EXECUTION_RUNTIME_UNAVAILABLE', 'EXECUTION_RUNTIME_CHANGED', 'EXECUTION_API_UNSUPPORTED', 'REGULAR_FILE_REQUIRED']);
 const blocked = (code: string) => ({ block: true as const, reason: `Permission blocked: ${code}${code in unsupportedMessages ? '. ' + unsupportedMessages[code as keyof typeof unsupportedMessages] : ''}` });
 const sourceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -150,6 +150,17 @@ export function createGate(globalPath: string | undefined, diagnostics?: (event:
     if (targetClassifiable && !config.legacy) {
       return maxClassification(contextClassification, ...action.targets.map(({ target }) => targetClassification(s, target)));
     }
+    // The classifier admits only a deliberately reviewed, literal inspection
+    // subset. Its exposure is the PUBLIC project/workspace plus any preflighted
+    // targets - it is not equivalent to arbitrary Bash. Package validation has
+    // the same treatment only after an exact operator-owned global declaration.
+    const boundedBash = action.tool === 'bash' && !config.legacy && action.commands?.every(command => command.inspection
+      || (command.validation && s.global.bash.ordinary.some(entry => entry.decision === 'ALLOW' && JSON.stringify(entry.argv) === JSON.stringify(command.argv))));
+    if (boundedBash) return maxClassification(contextClassification, ...action.targets.map(({ target }) => targetClassification(s, target)));
+    // Delegation's reviewed schema is a control operation. It releases only the
+    // already-classified parent context; the governed router independently asks
+    // this broker about the child route. Recall and unreviewed custom tools stay opaque.
+    if (!config.legacy && action.custom?.reviewed && action.custom.operation.startsWith('delegate.')) return contextClassification;
     const exposure = config.opaqueTools?.[action.tool] ?? config.opaqueTools?.['*'];
     if (!exposure) throw new Error('CLASSIFICATION_UNAVAILABLE');
     let value = maxClassification(contextClassification, exposure);
@@ -384,7 +395,10 @@ export default function piMonotonicPermissions(pi: ExtensionAPI) {
     const selected = typeof getFlag === 'function' ? ['public', 'private', 'secret'].filter(name => getFlag(name) === true) : [];
     if (selected.length > 1) return '__INVALID_CLASSIFICATION_FLAGS__';
     if (selected.length === 1) return selected[0] === 'public' ? 'PUBLIC' : selected[0] === 'private' ? 'PRIVATE' : 'SECRET';
-    return process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION ?? 'PUBLIC';
+    // Undefined deliberately reaches V2 defaultClassification. PUBLIC is an
+    // operator choice through --public or the explicit environment contract,
+    // not an implicit override of an operator-selected V2 default.
+    return process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION;
   };
   // Pi 0.85.1 getAgentDir convention, without a runtime SDK dependency.
   const rawAgentDir = process.env.PI_CODING_AGENT_DIR;

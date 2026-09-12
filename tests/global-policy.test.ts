@@ -44,7 +44,7 @@ test('daily policy: every protected component blocks native access as declared',
 test('daily policy: validation is frictionless, publication denied, other Git mutations blocked', async t => {
   const f = await fixture(); t.after(f.cleanup); await f.setGlobal(daily); const gate = await f.gate();
   const call = (command: string) => gate.call({ toolName: 'bash', toolCallId: 'daily', input: { command } }, context(f.cwd));
-  for (const command of ['pwd', 'ls', 'ls -la', 'rg --files', 'npm test', 'npm run lint', 'npm run typecheck', 'npm run build',
+  for (const command of ['pwd', 'ls', 'ls -la', 'rg --files safe.txt', 'npm test', 'npm run lint', 'npm run typecheck', 'npm run build',
     'git status', 'git status --short', 'git diff', 'git diff --check', 'git log', 'git show']) assert.equal(await call(command), undefined, command);
   for (const command of ['git push', 'git push --force', 'git reset --hard', 'git clean -fd', 'git branch -D old', 'git tag -d old',
     'git rebase HEAD', 'npm publish']) assert.match((await call(command))!.reason, /POLICY_DENY/, command);

@@ -8,7 +8,6 @@ import { context } from './fixtures.ts';
 
 for (const [command, code] of [
   ['pwd | cat', 'UNSUPPORTED_PIPELINE'], ['echo x > file', 'UNSUPPORTED_REDIRECTION'],
-  ['pwd && pwd', 'UNSUPPORTED_COMMAND_CHAIN'], ['pwd; pwd', 'UNSUPPORTED_COMMAND_CHAIN'],
   ['echo $(pwd)', 'UNSUPPORTED_SUBSTITUTION'], ['echo `pwd`', 'UNSUPPORTED_SUBSTITUTION'],
   ['pwd &', 'UNSUPPORTED_BACKGROUND_EXECUTION'], ['git diff --foo', 'UNSUPPORTED_GIT_FORM'],
   ['echo *', 'UNSUPPORTED_SHELL_SYNTAX'], ['env pwd', 'UNSUPPORTED_SHELL_WRAPPER'],
@@ -19,6 +18,16 @@ for (const [command, code] of [
   const result = await gate.call({ toolName: 'bash', toolCallId: 'reason', input: { command } }, context(f.cwd));
   assert.equal(result?.block, true); assert.ok(result?.reason.includes(code));
   assert.ok(!result?.reason.includes(command));
+});
+
+test('bounded inspection composition and deterministic file inspection are recognized', () => {
+  assert.deepEqual(classify('pwd && git status --short').map(item => item.argv), [['pwd'], ['git', 'status', '--short']]);
+  assert.deepEqual(classify('find . -maxdepth 2 -type f | sort | head -200').map(item => item.argv), [
+    ['find', '.', '-maxdepth', '2', '-type', 'f'], ['sort'], ['head', '-200']
+  ]);
+  assert.deepEqual(classify("stat -f '%N %z bytes' schema/public.sql")[0].targets, ['schema/public.sql']);
+  assert.deepEqual(classify('shasum -a 256 schema/public.sql')[0].targets, ['schema/public.sql']);
+  for (const command of ['find . -exec rm {} \\;', 'find . -delete', 'pwd && git push', 'npm test && git status']) assert.throws(() => classify(command));
 });
 
 test('diff check requires its exact allowance and does not authorize nearby forms', async t => {

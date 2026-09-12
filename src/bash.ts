@@ -1,9 +1,9 @@
 import { basename } from 'node:path';
 
 export const unsupportedMessages = {
-  UNSUPPORTED_PIPELINE: 'Pipelines are not supported. Request separate supported operations.',
+  UNSUPPORTED_PIPELINE: 'This pipeline contains an unsupported stage. Use only reviewed read-only inspection stages.',
   UNSUPPORTED_REDIRECTION: 'Shell redirection is not supported. Request a supported native file operation.',
-  UNSUPPORTED_COMMAND_CHAIN: 'Command chains/control operators are not supported. Request separate operations.',
+  UNSUPPORTED_COMMAND_CHAIN: 'This command chain contains an unsupported operation. Use only reviewed read-only inspection commands.',
   UNSUPPORTED_SUBSTITUTION: 'Shell substitution/expansion is not supported. Use literal arguments.',
   UNSUPPORTED_BACKGROUND_EXECUTION: 'Background execution is not supported.',
   UNSUPPORTED_SHELL_SYNTAX: 'This shell syntax is outside the supported literal-command subset.',
@@ -19,7 +19,17 @@ export class UnsupportedOperation extends Error {
   constructor(code: keyof typeof unsupportedMessages) { super(unsupportedMessages[code]); this.code = code; }
 }
 
-export interface Command { argv: string[]; categories: string[]; inspection: boolean; scan?: { path: string; recursive: boolean } }
+export interface Command {
+  argv: string[];
+  categories: string[];
+  /** A bounded, read-only command whose output is scoped to its targets/workspace. */
+  inspection: boolean;
+  /** A package validation command which is PUBLIC only with an exact global review. */
+  validation?: boolean;
+  scan?: { path: string; recursive: boolean; maxDepth?: number };
+  /** Explicit regular files whose metadata or digest is exposed. */
+  targets?: string[];
+}
 
 /** Recognizes only literal words. It does not attempt to parse general Bash. */
 export function words(command: string): string[] {
@@ -38,7 +48,6 @@ export function words(command: string): string[] {
     } else if (c === '"' || c === "'") { quote = c; active = true; }
     else if (c === ' ') { if (active) { argv.push(word); word = ''; active = false; } }
     else {
-      if (c === '|' && command[i + 1] !== '|') throw new UnsupportedOperation('UNSUPPORTED_PIPELINE');
       if (c === '>' || c === '<') throw new UnsupportedOperation('UNSUPPORTED_REDIRECTION');
       if (c === ';' || c === '|' || (c === '&' && command[i + 1] === '&')) throw new UnsupportedOperation('UNSUPPORTED_COMMAND_CHAIN');
       if (c === '&') throw new UnsupportedOperation('UNSUPPORTED_BACKGROUND_EXECUTION');
@@ -53,19 +62,42 @@ export function words(command: string): string[] {
   return argv;
 }
 
+/** Split only top-level literal command composition. This is deliberately not a shell parser. */
+function composition(command: string): { commands: string[]; operators: ('&&' | '||' | ';' | '|')[] } {
+  if (!command || /[\x00-\x1f\x7f]/.test(command)) throw new UnsupportedOperation('UNSUPPORTED_SHELL_SYNTAX');
+  const commands: string[] = [], operators: ('&&' | '||' | ';' | '|')[] = [];
+  let quote = '', start = 0;
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i];
+    if (quote) { if (c === quote) quote = ''; continue; }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    const operator = command.startsWith('&&', i) ? '&&' : command.startsWith('||', i) ? '||' : c === ';' ? ';' : c === '|' ? '|' : undefined;
+    if (!operator) continue;
+    const segment = command.slice(start, i).trim();
+    if (!segment) throw new UnsupportedOperation(operator === '|' ? 'UNSUPPORTED_PIPELINE' : 'UNSUPPORTED_COMMAND_CHAIN');
+    commands.push(segment); operators.push(operator); i += operator.length - 1; start = i + 1;
+  }
+  if (quote) throw new UnsupportedOperation('UNSUPPORTED_SHELL_SYNTAX');
+  const tail = command.slice(start).trim();
+  if (!tail) throw new UnsupportedOperation(operators.at(-1) === '|' ? 'UNSUPPORTED_PIPELINE' : 'UNSUPPORTED_COMMAND_CHAIN');
+  commands.push(tail);
+  return { commands, operators };
+}
+
 function git(argv: string[]): Command {
   const [_, operation, ...args] = argv;
   const result: Command = { argv, categories: [], inspection: false };
   if (!operation || operation.startsWith('-')) throw new UnsupportedOperation('UNSUPPORTED_GIT_FORM');
   // This new validation form requires an exact ordinary-policy entry, not the
   // legacy inspection default. Extra options/pathspecs remain unsupported.
-  if (operation === 'diff' && args.length === 1 && args[0] === '--check') return result;
+  if (operation === 'diff' && args.length === 1 && args[0] === '--check') return { ...result, validation: true };
   // Unsupported global options, aliases and overrides cannot hide a hard category.
-  if (['status', 'diff', 'log', 'show'].includes(operation)) {
-    if (args.some(a => a.startsWith('-') && !['--short', '--porcelain', '--stat', '--name-only', '--oneline', '--no-patch', '--no-ext-diff', '--no-textconv', '--', '-1'].includes(a))) throw new UnsupportedOperation('UNSUPPORTED_GIT_FORM');
-    result.inspection = true;
-    return result;
-  }
+  const exact = (...forms: string[][]) => forms.some(form => JSON.stringify(args) === JSON.stringify(form));
+  if (operation === 'status' && exact([], ['--short'], ['--porcelain'])) { result.inspection = true; return result; }
+  if (operation === 'branch' && exact(['--show-current'])) { result.inspection = true; return result; }
+  if (operation === 'diff' && exact([], ['--stat'], ['--name-only'], ['--no-ext-diff'], ['--no-textconv'])) { result.inspection = true; return result; }
+  if (operation === 'log' && exact([], ['--oneline'], ['--oneline', '--decorate'], ['--decorate', '--oneline'], ['-1'])) { result.inspection = true; return result; }
+  if (operation === 'show' && exact([], ['--no-patch'])) { result.inspection = true; return result; }
   if (operation === 'rev-parse') {
     if (args.length !== 1 || !['--show-toplevel', '--show-prefix', '--is-inside-work-tree', 'HEAD'].includes(args[0])) throw new UnsupportedOperation('UNSUPPORTED_GIT_FORM');
     result.inspection = true; return result;
@@ -103,8 +135,61 @@ function git(argv: string[]): Command {
   return result;
 }
 
-export function classify(command: string, depth = 0): Command[] {
-  const argv = words(command);
+function find(argv: string[]): Command {
+  const args = argv.slice(1);
+  const path = args.shift();
+  if (!path || path.startsWith('-')) throw new UnsupportedOperation('UNSUPPORTED_SHELL_SYNTAX');
+  let maxDepth: number | undefined;
+  let type: string | undefined;
+  let name: string | undefined;
+  while (args.length) {
+    const option = args.shift();
+    if (option === '-maxdepth') {
+      const value = args.shift();
+      if (!value || !/^[1-9][0-9]*$/.test(value) || Number(value) > 32 || maxDepth !== undefined) throw new UnsupportedOperation('INSPECTION_LIMIT');
+      maxDepth = Number(value);
+    } else if (option === '-type') {
+      const value = args.shift();
+      if (value !== 'f' || type !== undefined) throw new UnsupportedOperation('UNSUPPORTED_SHELL_SYNTAX');
+      type = value;
+    } else if (option === '-name') {
+      const value = args.shift();
+      if (!value || value.startsWith('-') || name !== undefined) throw new UnsupportedOperation('UNSUPPORTED_SHELL_SYNTAX');
+      name = value;
+    } else throw new UnsupportedOperation('UNSUPPORTED_SHELL_SYNTAX');
+  }
+  return { argv, categories: [], inspection: true, scan: { path, recursive: true, maxDepth } };
+}
+
+function stat(argv: string[]): Command {
+  const args = argv.slice(1);
+  if (args.length === 1 && !args[0].startsWith('-')) return { argv, categories: [], inspection: true, targets: args };
+  if (args.length === 3 && args[0] === '-f' && args[1].startsWith('%') && !/[\x00-\x1f\x7f]/.test(args[1]) && !args[2].startsWith('-'))
+    return { argv, categories: [], inspection: true, targets: [args[2]] };
+  throw new UnsupportedOperation('UNSUPPORTED_SHELL_SYNTAX');
+}
+
+function shasum(argv: string[]): Command {
+  const args = argv.slice(1);
+  if ((args.length === 1 && !args[0].startsWith('-')) || (args.length === 3 && args[0] === '-a' && args[1] === '256' && !args[2].startsWith('-')))
+    return { argv, categories: [], inspection: true, targets: [args.at(-1)!] };
+  throw new UnsupportedOperation('UNSUPPORTED_SHELL_SYNTAX');
+}
+
+function rg(argv: string[]): Command {
+  const args = argv.slice(1);
+  if (args[0] === '--files') {
+    args.shift();
+    if (args.length <= 1 && (!args[0] || !args[0].startsWith('-'))) return { argv, categories: [], inspection: true, scan: { path: args[0] ?? '.', recursive: true } };
+  }
+  while (['-n', '-i', '-F'].includes(args[0])) args.shift();
+  if (args.length === 2 && args.every(a => a && !a.startsWith('-')))
+    return { argv, categories: [], inspection: true, scan: { path: args[1], recursive: true } };
+  throw new UnsupportedOperation('UNSUPPORTED_SHELL_SYNTAX');
+}
+
+function single(commandText: string, depth: number): Command[] {
+  const argv = words(commandText);
   const executable = basename(argv[0]);
   if (['sh', 'bash'].includes(executable)) {
     if (depth >= 1 || argv.length !== 3 || argv[1] !== '-c') throw new UnsupportedOperation('UNSUPPORTED_SHELL_WRAPPER');
@@ -113,6 +198,9 @@ export function classify(command: string, depth = 0): Command[] {
   }
   if (['env', 'command', 'exec', 'eval', 'source', '.', 'cd', 'builtin'].includes(executable)) throw new UnsupportedOperation('UNSUPPORTED_SHELL_WRAPPER');
   if (executable === 'git') return [git(argv)];
+  if (executable === 'find') return [find(argv)];
+  if (executable === 'stat') return [stat(argv)];
+  if (executable === 'shasum') return [shasum(argv)];
   // Only bare executable spelling and bounded literal forms gain catalogue ALLOW.
   if (argv[0] === 'ls') {
     const args = argv.slice(1);
@@ -120,12 +208,10 @@ export function classify(command: string, depth = 0): Command[] {
     if (args.length <= 1 && (!args[0] || !args[0].startsWith('-')))
       return [{ argv, categories: [], inspection: true, scan: { path: args[0] ?? '.', recursive: false } }];
   }
-  if (argv[0] === 'rg') {
-    const args = argv.slice(1);
-    while (['-n', '-i', '-F'].includes(args[0])) args.shift();
-    if (args.length === 2 && args.every(a => a && !a.startsWith('-')))
-      return [{ argv, categories: [], inspection: true, scan: { path: args[1], recursive: true } }];
-  }
+  if (argv[0] === 'rg') return [rg(argv)];
+  if (executable === 'sort' && argv.length === 1) return [{ argv, categories: [], inspection: true }];
+  if (executable === 'head' && (argv.length === 1 || (argv.length === 2 && /^-[1-9][0-9]*$/.test(argv[1]))
+    || (argv.length === 3 && argv[1] === '-n' && /^[1-9][0-9]*$/.test(argv[2])))) return [{ argv, categories: [], inspection: true }];
   const categories: string[] = [];
   if (['npm', 'pnpm', 'yarn', 'bun'].includes(executable)) {
     if (argv[1]?.startsWith('-')) throw new UnsupportedOperation('UNSUPPORTED_PACKAGE_FORM');
@@ -137,5 +223,21 @@ export function classify(command: string, depth = 0): Command[] {
     if (argv.slice(1).some(a => a === '--recursive' || /^-[a-zA-Z]*[rR]/.test(a))) categories.push('recursiveDelete');
   }
   if (['sudo', 'dd', 'mkfs', 'diskutil', 'shutdown', 'reboot'].includes(executable)) categories.push('systemDestructive');
-  return [{ argv, categories, inspection: argv.length === 1 && executable === 'pwd' }];
+  const validation = (executable === 'npm' && (JSON.stringify(argv.slice(1)) === JSON.stringify(['test'])
+    || (argv[1] === 'run' && ['test', 'typecheck', 'lint', 'build'].includes(argv[2]) && argv.length === 3)));
+  return [{ argv, categories, inspection: argv.length === 1 && executable === 'pwd', ...(validation ? { validation: true } : {}) }];
+}
+
+/**
+ * Supports a deliberately small composition grammar. Every segment must already
+ * be a recognized inspection command; this is not a general shell evaluator.
+ */
+export function classify(commandText: string, depth = 0): Command[] {
+  const { commands, operators } = composition(commandText);
+  const parsed = commands.flatMap(segment => single(segment, depth));
+  if (!operators.length) return parsed;
+  if (!parsed.every(item => item.inspection)) {
+    throw new UnsupportedOperation(operators.includes('|') ? 'UNSUPPORTED_PIPELINE' : 'UNSUPPORTED_COMMAND_CHAIN');
+  }
+  return parsed;
 }

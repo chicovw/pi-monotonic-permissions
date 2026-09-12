@@ -63,15 +63,17 @@ Symlink aliases therefore cannot escape a resource classification.
 Native `read`, `grep`, `find`, `ls`, `write`, and `edit` are target-classifiable:
 their label is the maximum of every bounded preflight target, including path names
 disclosed by discovery. They do not become PRIVATE merely because of their tool
-identity. `bash`, recall, unknown extensions, and every other opaque operation
-require an `opaqueTools` exact or `"*"` label. Omitted opaque labels deny. This is
-an operator assertion about complete exposure, not a sandbox proof.
+identity. The bounded Bash inspection subset below follows the same rule, and an
+exact globally reviewed validation command uses the project label. Recall,
+unreviewed extensions, arbitrary Bash, and other opaque operations require an
+`opaqueTools` exact or `"*"` label. Omitted opaque labels deny. This is an
+operator assertion about complete exposure, not a sandbox proof.
 
 At initialization PMP captures a fresh-session choice from the mutually exclusive
 Pi flags `--public`, `--private`, and `--secret`, or from
 `PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION` with a case-sensitive
 `PUBLIC`, `INTERNAL`, `PRIVATE`, or `SECRET` value. With no flag, V2 launches
-default to PUBLIC. `SECRET` is an explicit non-generative posture: normal routes
+use `defaultClassification`. `SECRET` is an explicit non-generative posture: normal routes
 remain ineligible.
 It is separate from `PI_MONOTONIC_PERMISSIONS_CONTEXT_CLASSIFICATION`, which is a
 parent-approved inherited child label and may also be `SECRET`. Both malformed
@@ -148,7 +150,7 @@ Extension tools use the separate custom policy below.
 - read requires target read permission.
 - write requires destination write and prospective parent-creation permission.
 - edit requires target read, write and edit permission.
-- Recognized Bash ls/rg additionally apply read tool policy to checked paths.
+- Recognized Bash inspection additionally applies read tool policy to checked paths.
 
 ## Path scopes
 
@@ -224,23 +226,36 @@ control characters) and `decision`. Exact entire-vector matching applies. Duplic
 matching entries all contribute restrictions. They do not bypass known consequential
 categories or path restrictions. This is not an executable allowlist.
 
-Literal words and basic quoting are supported. Pipelines, redirection, command
-chains/control syntax, functions, substitutions, background execution and ambiguous
-quoting block. One `sh -c`/`bash -c` layer is recognized with exactly one literal
-command string; wrapper unknown policy and inner categories both contribute.
+Literal words and basic quoting are supported. Redirection, substitutions,
+background execution, variable injection, functions and ambiguous quoting block.
+One `sh -c`/`bash -c` layer is recognized with exactly one literal command string;
+wrapper unknown policy and inner categories both contribute.
 
-Known inspection includes `pwd`, bounded Git status/diff/log/show forms and
-`git rev-parse` with exactly one of `HEAD`, `--show-toplevel`, `--show-prefix`,
-`--is-inside-work-tree`. Unsupported Git flags block. Exact `git diff --check`
-requires an ordinary entry; cached/pathspec/other option variants are not inferred.
+Known PUBLIC-preserving inspection includes `pwd`; `git status` and
+`git status --short`; `git branch --show-current`; `git diff` and
+`git diff --stat`; `git log`, `git log --oneline`, `git show`, and
+`git log --oneline --decorate`; and `git rev-parse` with exactly one of `HEAD`,
+`--show-toplevel`, `--show-prefix`, `--is-inside-work-tree`. Unsupported Git
+flags block. `git diff --check` is validation and requires an exact global
+ordinary ALLOW entry; cached/pathspec/other option variants are not inferred.
 
-Bare `ls` accepts an optional single `-l`, `-a`, `-la`, `-al` and at most one literal
-non-option target. It checks that target's read policy, not every listed name.
-Bare `rg` accepts optional `-n`, `-i`, `-F` plus exactly a non-option pattern and
-path. The whole search subtree is preflighted (2048 targets, depth 32). Denied
-directories are not enumerated. Any denied target blocks the final command.
-Unresolvable paths block; cycles are bounded. Other literal forms use unknown
-policy unless separately exact-allowed; they are not automatically promoted.
+`find <path>` accepts only optional `-maxdepth N` (1-32), `-type f`, and `-name`.
+`-exec`, `-delete`, and all other forms block. `stat <file>` and
+`stat -f <format> <file>` plus `shasum <file>` and `shasum -a 256 <file>` expose
+only their preflighted regular-file target. Bare `ls` accepts an optional single
+`-l`, `-a`, `-la`, `-al` and at most one literal non-option target. Bare `rg`
+accepts `--files [path]`, or optional `-n`, `-i`, `-F` plus exactly a non-option
+pattern and path. Its whole search subtree is preflighted (2048 targets, depth
+32). Denied directories are not enumerated. Any denied target blocks the final
+command. Unresolvable paths block; cycles are bounded.
+
+Top-level `&&`, `||`, `;`, and `|` are accepted only when every segment is a
+recognized read-only inspection command. Pipelines have a small reviewed stage
+set: discovery/search, `sort`, and bounded `head`. There is no redirection,
+substitution, variable expansion or background execution in composed commands.
+Validation and unknown/consequential commands cannot be composed. Other literal
+forms use unknown policy unless separately exact-allowed; they are not
+automatically promoted.
 
 Global `bash.destructive` keys:
 

@@ -233,7 +233,7 @@ test('actual Pi persists admission classification and denies hosted release afte
   assert.equal(result.stopReason,'error'); assert.match(result.errorMessage!,/CLASSIFICATION_DENY/); assert.equal(providerCalls,0);
 });
 
-test('actual Pi V2 captures direct fresh PUBLIC selection separately from its PRIVATE default', async t => {
+test('actual Pi V2 honors an explicit fresh PUBLIC selection and otherwise uses its PRIVATE default', async t => {
   const f = await fixture(); t.after(f.cleanup);
   const p = policy(); p.version = 2; p.execution = {
     defaultClassification: 'PRIVATE', opaqueTools: { bash: 'PRIVATE', recall: 'PRIVATE' },
@@ -250,7 +250,7 @@ test('actual Pi V2 captures direct fresh PUBLIC selection separately from its PR
     delete process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION;
     const defaultSession = await sessionFor(f, ['read']); t.after(() => defaultSession.session.dispose());
     const defaultLabels = defaultSession.session.sessionManager.getEntries().filter((e: any) => e.customType === 'pi-monotonic-permissions.classification');
-    assert.deepEqual((defaultLabels.at(-1) as any).data, { classification: 'PUBLIC' });
+    assert.deepEqual((defaultLabels.at(-1) as any).data, { classification: 'PRIVATE' });
   } finally {
     if (prior === undefined) delete process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION;
     else process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION = prior;

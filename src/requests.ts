@@ -35,6 +35,14 @@ export async function describe(request: Request, cwd: string, info?: ToolInfo): 
   if (request.toolName === 'bash') {
     shape(input, ['command', 'timeout'], ['command']); text(input.command); number(input.timeout);
     action.commands = classify(input.command);
+    for (const command of action.commands) {
+      for (const path of command.targets ?? []) {
+        const target = await resolveTarget(path, cwd);
+        if (target.directory) throw new Error('REGULAR_FILE_REQUIRED');
+        await requireReadable(target);
+        action.targets.push({ target, operations: ['read'] });
+      }
+    }
     // Recognized literal rm destinations also receive native-style write restrictions.
     for (const command of action.commands) {
       if (command.argv[0].split('/').pop() === 'rm') {

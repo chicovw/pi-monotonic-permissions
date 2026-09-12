@@ -10,8 +10,8 @@ import { UnsupportedOperation } from './bash.ts';
 export async function inspectTargets(action: Action, cwd: string, decide: (a: Action) => Result): Promise<void> {
   const visited = new Set<string>();
   let count = 0;
-  async function visit(path: string, recursive: boolean, depth: number): Promise<void> {
-    if (++count > 2048 || depth > 32) throw new UnsupportedOperation('INSPECTION_LIMIT');
+  async function visit(path: string, recursive: boolean, depth: number, maxDepth = 32): Promise<void> {
+    if (++count > 2048 || depth > maxDepth) throw new UnsupportedOperation('INSPECTION_LIMIT');
     const target = await resolveTarget(path, cwd);
     const item = { target, operations: ['read' as const] };
     action.targets.push(item);
@@ -19,9 +19,9 @@ export async function inspectTargets(action: Action, cwd: string, decide: (a: Ac
     if (decide({ tool: 'read', targets: [item] }).decision === 'DENY') return;
     if (!recursive || !target.directory || visited.has(target.identity)) return;
     visited.add(target.identity);
-    for (const entry of await readdir(target.lexical)) await visit(join(target.lexical, entry), true, depth + 1);
+    for (const entry of await readdir(target.lexical)) await visit(join(target.lexical, entry), true, depth + 1, maxDepth);
   }
   for (const command of action.commands ?? []) {
-    if (command.scan) await visit(command.scan.path, command.scan.recursive, 0);
+    if (command.scan) await visit(command.scan.path, command.scan.recursive, 0, command.scan.maxDepth);
   }
 }

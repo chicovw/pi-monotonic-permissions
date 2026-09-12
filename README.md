@@ -193,16 +193,16 @@ secret material, and is never normally sent to a generative route.
 
 Use schema V2 for a global policy that supports PUBLIC sessions. Its `execution`
 object requires `defaultClassification`, `opaqueTools`, and `routes`. Normal
-`pi` may use `defaultClassification: "PRIVATE"` as its policy fallback. The
-PMP extension registers classification flags; a fresh PUBLIC launch is:
+`pi` uses `defaultClassification` when there is no explicit fresh-session
+selection. The PMP extension registers classification flags; a fresh PUBLIC launch is:
 
 ```sh
 pi --public
 ```
 
 The available flags are `--public`, `--private`, and `--secret`. With no flag,
-V2 launches default to PUBLIC; `--secret` intentionally makes normal generative
-routes ineligible. The equivalent environment contract is
+V2 uses the policy's `defaultClassification`; `--secret` intentionally makes
+normal generative routes ineligible. The equivalent environment contract is
 `PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION=PUBLIC|INTERNAL|PRIVATE|SECRET`.
 The value is captured once and is case-sensitive. Malformed values or multiple
 classification flags block. It is intentionally distinct from
@@ -226,7 +226,9 @@ Use `resources` to raise individual component, file, or tree labels. Native
 `read`, `grep`, `find`, `ls`, `write`, and `edit` derive sensitivity from their
 bounded target set, including names exposed by listing. Consequently public
 source work stays PUBLIC, while touching a PRIVATE target raises the session and
-touching a SECRET target is denied. `bash`, recall, unknown tools, and other
+touching a SECRET target is denied. Recognized bounded Bash inspection uses the
+same target/workspace rule. Exact globally reviewed validation commands also use
+the project classification. Recall, unreviewed tools, arbitrary Bash, and other
 opaque operations instead require `opaqueTools` declarations because their full
 exposure cannot be attributed to bounded targets. See the complete
 [policy reference](docs/policy-reference.md).
@@ -330,32 +332,57 @@ root alias can therefore be denied even if its canonical target is inside. On
 macOS this includes `/tmp` versus `/private/tmp`. Use canonical project spelling.
 Darwin protected-component matching conservatively folds case and Unicode NFC.
 
-Native grep supports one explicit regular file. Directory grep, native find/ls
-and native PowerShell are blocked in enforced modes. The gate does not change Pi's visible tool list.
+Native `read` and grep support one explicit regular file. A native `read` of a
+directory is rejected as `REGULAR_FILE_REQUIRED`; it is not an implicit `ls`.
+Native find/ls and native PowerShell are blocked in enforced modes. The gate does
+not change Pi's visible tool list.
 
 ## Bash and Git
 
 This is a bounded literal-command recognizer, not a Bash parser. Basic literal
-quoting is supported. Pipelines, redirects, substitution, functions, background
-execution and command chains block. One literal `sh -c`/`bash -c` layer is checked;
-the wrapper still contributes unknown-command policy.
+quoting is supported. Redirects, substitution, functions, variable injection,
+background execution, shell wrappers beyond one literal `sh -c`/`bash -c` layer,
+and control syntax such as `if` block. The wrapper still contributes unknown-command policy.
 
-Known Git inspection has a narrow option set. `git diff --check` requires an exact
-ordinary-policy entry. Narrow `rev-parse` forms are recognized. Unsupported Git
-options and operations block. Push, force/lease/force-refspec, ref deletion,
-mirror push, hard reset, clean and explicit history rewriting have consequential
-categories. Package publication has its own category.
+The reviewed PUBLIC-preserving inspection forms are `pwd`; `git status` and
+`git status --short`; `git branch --show-current`; `git rev-parse HEAD`,
+`--show-toplevel`, `--show-prefix`, and `--is-inside-work-tree`; `git diff`,
+`git diff --stat`; `git log`, `git log --oneline`, `git show`, and
+`git log --oneline --decorate`; bounded `find`; safe `stat` and `shasum` file
+forms; and bounded `rg`. `git diff --check` and `npm test`,
+`npm run test|typecheck|lint|build` are validation forms and require an exact
+global `bash.ordinary` `ALLOW` declaration before they retain PUBLIC exposure.
+That declaration is an operator review of the program's potential output, not a
+sandbox guarantee.
+
+Top-level `&&`, `||`, and `;` chains, and `|` pipelines, are accepted only when
+every segment is one of those reviewed read-only inspection forms. For example,
+`pwd && git status --short` and
+`find src -maxdepth 2 -type f | sort | head -200` are supported. Pipelines may
+use only recognized stages such as `find`, `rg`, `sort`, and bounded `head`.
+No redirect, substitution, variable expansion, background task, or unreviewed
+stage is permitted. A chain containing validation or a consequential command is
+rejected rather than being interpreted as safe.
+
+Known Git inspection has the narrow forms listed above. Unsupported Git options
+and operations block. Push, force/lease/force-refspec, ref deletion, mirror push,
+hard reset, clean and explicit history rewriting have consequential categories.
+Package publication has its own category.
 
 Exact ordinary entries match the entire argument vector, never an executable
 prefix. Other simple commands use `bash.unknown`; unsupported syntax cannot be
 approved as a generic unknown command.
 
-Bounded bare `ls` forms check an explicit target. Bare `rg` supports optional
-`-n`, `-i`, `-F` flags plus exactly a pattern and path. Content-search preflight
-checks the subtree before execution, blocks if any checked target is denied, and
-limits traversal to 2048 targets and depth 32. It does not filter results after
-reading sensitive content. This check remains subject to races and external
-program/configuration behavior. Details are in the policy reference.
+Bounded `find` accepts a literal target with optional `-maxdepth` (1-32),
+`-type f`, and `-name`; it never accepts `-exec` or `-delete`. `stat <file>`,
+`stat -f <format> <file>`, `shasum <file>`, and `shasum -a 256 <file>` preflight
+their one regular-file target. Bare `rg` accepts `--files [path]`, or optional
+`-n`, `-i`, `-F` flags plus exactly a pattern and path. Search/discovery preflight
+checks every result subtree before execution, blocks if any checked target is
+denied, and limits traversal to 2048 targets and depth 32. It does not filter
+results after reading sensitive content: a `find .` or `rg ... .` that would
+expose a protected descendant is denied. This check remains subject to races and
+external program/configuration behavior. Details are in the policy reference.
 
 ## Approvals
 
