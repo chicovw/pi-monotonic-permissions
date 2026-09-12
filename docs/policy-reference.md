@@ -105,6 +105,12 @@ are implemented; the private Pi binding is version-specific and requires review
 on upgrades. Automatic routing, data detection, sanitization, and broader hosted
 context authorization remain deferred.
 
+### Runtime authority broker
+
+PMP also publishes a versioned read-only in-process broker for an operator-installed delegation controller. Version 1 exposes `currentClassification()` and `evaluateRoute(route)`. `evaluateRoute` accepts a complete resolved route and returns an eligibility decision only if that exact provider, API, endpoint, runtime attestation, environment, and ceiling are approved by loaded policy.
+
+The broker exposes no policy, grants, mode selector, classification mutation, or route selection operation. It is a trusted-extension integration seam, not a sandbox boundary. A controller must refuse when the broker is absent, unavailable, incompatible, malformed, or denies the route.
+
 ## Decisions and profiles
 
 Decisions are case-sensitive `ALLOW`, `ASK`, `DENY`. Maximum severity wins across
@@ -273,9 +279,10 @@ may include arguments/results even though extension diagnostics omit payloads.
 |---|---|---|
 | `unknown` | `ASK`, `DENY` | Structurally valid unreviewed custom-tool fallback |
 | `recall` | `ALLOW`, `ASK`, `DENY` | Restriction on all calls named recall, including changed schemas |
-| `operations` | object | The two reviewed operation restrictions below |
+| `operations` | object | Up to 128 reviewed operation restrictions. Keys are bounded semantic operation IDs, not package names. |
 | `operations.recall.activeLineage` | `ALLOW`, `ASK`, `DENY` | Validated active-lineage recall |
 | `operations.recall.allLineages` | `ALLOW`, `ASK`, `DENY` | Validated explicit `scope: "all"` recall |
+| `operations.delegate.scout` | `ALLOW`, `ASK`, `DENY` | Reviewed immutable `delegate_role` scout request |
 
 JSON operation keys contain literal dots:
 
@@ -300,6 +307,7 @@ Global defaults when a field is absent:
 |---|---|---|
 | reviewed active lineage | ALLOW | ASK |
 | reviewed all lineages | ASK | ASK |
+| other reviewed bounded operation | ASK | ASK |
 | unknown custom tool | ASK | DENY |
 
 `unknown: ALLOW` is rejected even in project policy. Guarded may explicitly opt
@@ -315,6 +323,13 @@ reject some numerically invalid shapes upstream's broad number schema accepts.
 All default/ID/regex/file/touched/drill-down/pagination calls use the supplied
 scope. `query: "scope:all"` is search text. Active lineage also requires Pi's
 nonempty branch with valid entry IDs to avoid upstream's all-entry fallback.
+
+`delegate_role` accepts exactly `role` and `task`. Its role is one of `scout`,
+`reviewer`, `verifier`, or `implementer`, yielding the corresponding
+`delegate.<role>` operation. It does not itself select a child model, provider,
+runtime, extension, workspace, profile, or tool grant. A controller must make
+those operator-owned decisions and obtain an eligible route from PMP's runtime
+broker before it starts a child.
 
 Schema recognition ignores descriptive annotations only; the full schema still
 participates in grant invalidation. Changed/unrecognized schemas fall back to

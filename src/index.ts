@@ -14,10 +14,12 @@ import { describe } from './requests.ts';
 import type { Request } from './requests.ts';
 import { fingerprint, GrantStore } from './grants.ts';
 import type { Grant } from './grants.ts';
-import { mayReleaseContext, maxClassification } from './eligibility.ts';
-import type { Classification } from './eligibility.ts';
+import { mayReleaseContext, maxClassification, minCeiling } from './eligibility.ts';
+import type { Classification, Ceiling, ResolvedRoute } from './eligibility.ts';
 import { installRuntimeEligibility } from './pi-runtime.ts';
 import type { RuntimeIdentity } from './pi-runtime.ts';
+import { publishRuntimeAuthorityBroker } from './runtime-broker.ts';
+import type { RouteEligibility, RuntimeAuthorityBroker } from './runtime-broker.ts';
 
 /**
  * Stable, side-effect-free integration seam for delegated execution controllers.
@@ -27,6 +29,9 @@ import type { RuntimeIdentity } from './pi-runtime.ts';
  */
 export { mayReleaseContext, maxClassification, minCeiling } from './eligibility.ts';
 export type { Classification, Ceiling, ResolvedRoute, ExecutionConfig, ProjectExecutionConfig } from './eligibility.ts';
+export { getRuntimeAuthorityBroker } from './runtime-broker.ts';
+export type { RouteEligibility, RuntimeAuthorityBroker } from './runtime-broker.ts';
+export { delegateRoleSchema } from './custom-tools.ts';
 
 type Context = Pick<ExtensionContext, 'cwd' | 'mode' | 'hasUI'> & {
   ui: Pick<ExtensionContext['ui'], 'select'>;
@@ -84,6 +89,30 @@ export function createGate(globalPath: string | undefined, diagnostics?: (event:
     const globalDecision = mayReleaseContext(classification, route, s.global.execution?.ceiling);
     if (!decision.allowed || !globalDecision.allowed) throw new Error('CLASSIFICATION_DENY');
     return digest({ route, classification, globalCeiling: s.global.execution?.ceiling, projectCeiling: s.project?.execution?.ceiling });
+  }
+  async function routeEligibility(candidate: unknown): Promise<RouteEligibility> {
+    try {
+      const { s } = await currentSnapshot();
+      // Validate the complete candidate before matching it. Route matching must not
+      // quietly ignore extra fields or accessors supplied by another extension.
+      const structural = mayReleaseContext(contextClassification, candidate, s.project?.execution?.ceiling);
+      if (structural.reason === 'ELIGIBILITY_INVALID') return { allowed: false, reason: 'ELIGIBILITY_INVALID' };
+      const route = s.global.execution!.routes!.find(item => {
+        if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false;
+        const c = candidate as Partial<ResolvedRoute>;
+        return item.provider === c.provider && item.api === c.api && item.baseUrl === c.baseUrl && item.runtime === c.runtime
+          && item.environment === c.environment && item.ceiling === c.ceiling;
+      });
+      if (!route) return { allowed: false, reason: 'ROUTE_UNAPPROVED' };
+      const projectCeiling = s.project?.execution?.ceiling;
+      const effective = projectCeiling === undefined ? route.ceiling : minCeiling(route.ceiling, projectCeiling);
+      const decision = mayReleaseContext(contextClassification, route, projectCeiling);
+      const globalDecision = mayReleaseContext(contextClassification, route, s.global.execution?.ceiling);
+      if (!decision.allowed || !globalDecision.allowed) return { allowed: false, reason: decision.reason === 'SECRET_INELIGIBLE' || globalDecision.reason === 'SECRET_INELIGIBLE' ? 'SECRET_INELIGIBLE' : 'CLASSIFICATION_EXCEEDS_CEILING', classification: contextClassification, ceiling: effective };
+      return { allowed: true, reason: 'ELIGIBLE', classification: contextClassification, ceiling: effective };
+    } catch {
+      return { allowed: false, reason: 'POLICY_UNAVAILABLE' };
+    }
   }
   function classifyAction(s: Snapshot, action: Action) {
     const config = s.global.execution!;
@@ -173,6 +202,16 @@ export function createGate(globalPath: string | undefined, diagnostics?: (event:
       } catch { /* Keep the registered gate alive and blocking. Never discard it. */ }
     },
     profile() { return snapshot && selectedMode === 'yolo' ? 'YOLO ⚠' : snapshot ? selectedMode ?? snapshot.global.profile ?? 'legacy' : 'unavailable'; },
+    broker(): RuntimeAuthorityBroker {
+      return Object.freeze({
+        version: 1 as const,
+        async currentClassification() {
+          try { await currentSnapshot(); return { available: true as const, classification: contextClassification }; }
+          catch { return { available: false as const, reason: 'POLICY_UNAVAILABLE' as const }; }
+        },
+        evaluateRoute: routeEligibility,
+      });
+    },
     async release(identity: RuntimeIdentity) {
       const current = epoch; const { s } = await currentSnapshot();
       if (epoch !== current) throw new Error('EXECUTION_RUNTIME_CHANGED');
@@ -303,8 +342,11 @@ export default function piMonotonicPermissions(pi: ExtensionAPI) {
     resolveExecution: async ctx => { if (!runtimeGate) throw new Error('EXECUTION_RUNTIME_UNAVAILABLE'); return runtimeGate.resolve(ctx.model); },
     recordClassification: value => pi.appendEntry('pi-monotonic-permissions.classification', { classification: value })
   });
+  let brokerAvailable = false;
+  try { publishRuntimeAuthorityBroker(gate.broker()); brokerAvailable = true; } catch { /* Session startup fails closed below. */ }
   pi.on('session_start', async (_event, ctx) => {
     try {
+      if (!brokerAvailable) throw new Error('RUNTIME_BROKER_CONFLICT');
       const labels = ctx.sessionManager.getEntries().filter(e => e.type === 'custom' && e.customType === 'pi-monotonic-permissions.classification')
         .map(e => (e as { data: { classification: Classification } }).data.classification);
       await gate.start(ctx.cwd, labels);

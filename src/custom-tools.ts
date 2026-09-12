@@ -12,6 +12,10 @@ export const recallSchema = { type: 'object', properties: {
   page: { type: 'number' }, scope: { type: 'string', enum: ['lineage', 'all'] },
   mode: { type: 'string', enum: ['hybrid', 'file', 'touched'] }
 } };
+export const delegateRoleSchema = { type: 'object', required: ['role', 'task'], properties: {
+  role: { type: 'string', enum: ['scout', 'reviewer', 'verifier', 'implementer'] },
+  task: { type: 'string' }
+} };
 function contractShape(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(contractShape);
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value)
@@ -28,7 +32,16 @@ function recall(input: Record<string, unknown>): string {
       || input.expand.some(n => !Number.isSafeInteger(n) || n < 0)))) throw new Error('CUSTOM_SHAPE');
   return input.scope === 'all' ? 'recall.allLineages' : 'recall.activeLineage';
 }
-const adapters = new Map([['recall', { schema: recallSchema, version: 'pi-blackhole@0.5.3/recall-v1', describe: recall }]]);
+function delegateRole(input: Record<string, unknown>): string {
+  if (Object.keys(input).some(k => !['role', 'task'].includes(k))
+    || !['scout', 'reviewer', 'verifier', 'implementer'].includes(input.role as string)
+    || typeof input.task !== 'string' || input.task.length < 1 || input.task.length > 32 * 1024) throw new Error('CUSTOM_SHAPE');
+  return `delegate.${input.role}`;
+}
+const adapters = new Map([
+  ['recall', { schema: recallSchema, version: 'pi-blackhole@0.5.3/recall-v1', describe: recall }],
+  ['delegate_role', { schema: delegateRoleSchema, version: 'governed-role-router/delegate-role-v1', describe: delegateRole }],
+]);
 
 export async function describeCustom(request: Request, info?: ToolInfo): Promise<Action> {
   if (typeof request.toolName !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(request.toolName)

@@ -39,6 +39,7 @@ review. An extension can execute independently of its model-facing tools.
 |---|---|
 | `eligibility.ts` | Strict classification declarations and pure context-release eligibility |
 | `pi-runtime.ts` | Version-pinned post-authentication, pre-provider request veto |
+| `runtime-broker.ts` | Versioned read-only classification and route-eligibility seam for trusted controllers |
 | `index.ts` | Pi hooks, startup mode, session snapshots, serialized approvals, grant application, receipts/status |
 | `config.ts` | Strict JSON, scope anchoring, canonical policy loading and freezing |
 | `requests.ts` | Native shape validation and explicit target operations |

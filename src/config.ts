@@ -128,7 +128,16 @@ export async function parsePolicy(value: unknown, cwd: string, global: boolean):
       if (c.unknown === 'ALLOW') throw new Error('POLICY_UNKNOWN_ALLOW');
     }
     if (c.recall !== undefined) policy.customTools.recall = decision(c.recall);
-    if (c.operations !== undefined) policy.customTools.operations = decisions(c.operations, ['recall.activeLineage', 'recall.allLineages']);
+    if (c.operations !== undefined) {
+      const operations = object(c.operations, Object.keys(c.operations as ObjectValue));
+      if (Object.keys(operations).length > 128) throw new Error('POLICY_CUSTOM_OPERATION_SIZE');
+      const parsed: Record<string, Decision> = Object.create(null);
+      for (const [operation, value] of Object.entries(operations)) {
+        if (!/^[a-z][a-z0-9]*(?:[._:-][a-zA-Z0-9]+)*$/.test(operation) || operation.length > 128) throw new Error('POLICY_CUSTOM_OPERATION');
+        parsed[operation] = decision(value);
+      }
+      policy.customTools.operations = parsed;
+    }
   }
   return freeze(policy);
 }

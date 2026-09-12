@@ -370,3 +370,11 @@ An operator-controlled fresh-child handoff may set `PI_MONOTONIC_PERMISSIONS_CON
 ### Semantic adapters
 
 Native Pi tools and reviewed extension tools are normalized into small semantic operations such as `filesystem.read_file`, `filesystem.list_directory`, `filesystem.find_paths`, and `history.recall`. The operator-owned adapter registry requires an explicit reviewed descriptor and a stable contract identifier. Adapter schemas are fingerprinted; a changed contract falls back conservatively rather than silently retaining prior authority. Simple deterministic tools can use declarative descriptors. History, delegation, and other context-sensitive tools require reviewed code adapters. Project files cannot register authoritative adapters. Directory listing and path discovery are metadata-only, but this implementation denies a traversal that would reveal names of configured protected entries; it never treats listing as permission to read their contents.
+
+## Delegation controller seam
+
+An operator-installed delegation controller can compose PMP with a child-lifecycle package through a small read-only runtime broker. It can obtain the current effective classification and ask whether an already resolved route is policy-approved. It cannot select a route, lower classification, change policy, alter grants, or mutate the active mode. A missing or unavailable broker must make the controller refuse the delegation.
+
+Roles describe purpose and tool ceilings. Routes separately describe the runtime/provider, model, execution environment, and classification ceiling. A routing preference ranks only routes that PMP has already accepted. Model names do not establish locality or trust.
+
+`delegate_role` is a reviewed custom-tool contract with exactly `role` and `task` fields. The bounded roles are `scout`, `reviewer`, `verifier`, and `implementer`; a matching schema fingerprint and extension source identity are required before operation-specific policy such as `delegate.scout` applies. The controller still verifies its immutable role, route, child plan, and explicit child PMP loading before process launch.

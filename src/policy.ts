@@ -22,7 +22,7 @@ export interface Policy {
   protected: Rule[];
   bash: { unknown?: Decision; ordinary: { argv: string[]; decision: Decision }[]; destructive: Record<string, Decision> };
   publication: Record<string, Decision>;
-  customTools?: { unknown?: Decision; recall?: Decision; operations?: Partial<Record<'recall.activeLineage' | 'recall.allLineages', Decision>> };
+  customTools?: { unknown?: Decision; recall?: Decision; operations?: Record<string, Decision> };
 }
 export interface Action {
   tool: string;
@@ -53,7 +53,7 @@ export function evaluate(policy: Policy, action: Action, layer: 'global' | 'proj
     const c = policy.customTools;
     if (action.tool === 'recall') add(c?.recall, 'CUSTOM_TOOL');
     if (action.custom.reviewed) {
-      add(c?.operations?.[action.custom.operation as 'recall.activeLineage' | 'recall.allLineages']
+      add(c?.operations?.[action.custom.operation]
         ?? (layer === 'global' ? (action.custom.operation === 'recall.activeLineage' && policy.profile === 'trusted' ? 'ALLOW' : 'ASK') : undefined), 'CUSTOM_OPERATION');
     } else {
       // A changed/unrecognized recall contract cannot escape existing recall
