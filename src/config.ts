@@ -1,4 +1,5 @@
 import { parseExecution } from './eligibility.ts';
+import type { ExecutionConfig, ProjectExecutionConfig, ResourceRule } from './eligibility.ts';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
@@ -43,6 +44,33 @@ function freeze<T>(value: T): T {
   return value;
 }
 
+async function bindResources(resources: readonly ResourceRule[] | undefined, cwd: string): Promise<ResourceRule[] | undefined> {
+  if (!resources) return undefined;
+  return Promise.all(resources.map(async rule => {
+    if (rule.component) return rule;
+    const target = await resolveTarget(anchor({ base: rule.base, path: rule.path }, cwd), cwd, true);
+    if (rule.kind === 'tree' && !target.directory) throw new Error('EXECUTION_RESOURCE');
+    return { ...rule, target };
+  }));
+}
+
+async function bindExecution(execution: ExecutionConfig | ProjectExecutionConfig, cwd: string, global: boolean): Promise<ExecutionConfig | ProjectExecutionConfig> {
+  const resources = await bindResources(execution.resources, cwd);
+  if (!global) return { ...execution, ...(resources ? { resources } : {}) };
+  const config = execution as ExecutionConfig;
+  let projects: ExecutionConfig['projects'];
+  if (config.projects) {
+    const seen = new Set<string>();
+    projects = await Promise.all(config.projects.map(async project => {
+      const target = await resolveTarget(project.path, cwd);
+      if (!target.directory || seen.has(target.canonical)) throw new Error('EXECUTION_PROJECT');
+      seen.add(target.canonical);
+      return { ...project, path: target.canonical };
+    }));
+  }
+  return { ...config, ...(resources ? { resources } : {}), ...(projects ? { projects } : {}) };
+}
+
 export function parseJson(source: string): unknown {
   if (source.length > 1024 * 1024) throw new Error('POLICY_SIZE');
   const value: unknown = JSON.parse(source);
@@ -66,10 +94,10 @@ export function parseJson(source: string): unknown {
 
 export async function parsePolicy(value: unknown, cwd: string, global: boolean): Promise<Policy> {
   const raw = object(value, ['version', 'tools', 'paths', 'bash', 'publication', 'customTools', 'execution', ...(global ? ['profile'] : [])]);
-  if (raw.version !== 1) throw new Error('POLICY_VERSION');
+  if (raw.version !== 1 && raw.version !== 2) throw new Error('POLICY_VERSION');
   if (global && ['tools', 'paths', 'bash', 'publication'].some(k => !(k in raw))) throw new Error('POLICY_REQUIRED');
   const policy: Policy = { tools: {}, protected: [], bash: { ordinary: [], destructive: {} }, publication: {} };
-  if (raw.execution !== undefined) policy.execution = parseExecution(raw.execution, global);
+  if (raw.execution !== undefined) policy.execution = await bindExecution(parseExecution(raw.execution, global), cwd, global);
   if (raw.profile !== undefined) {
     if (raw.profile !== 'guarded' && raw.profile !== 'trusted') throw new Error('POLICY_PROFILE');
     policy.profile = raw.profile;

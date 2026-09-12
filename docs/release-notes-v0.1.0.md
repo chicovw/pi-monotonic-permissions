@@ -1,6 +1,6 @@
 # Draft release notes (unpublished)
 
-The V1.3 development tree adds reviewed extension-tool governance, conservative
+The 0.1.0 development tree adds reviewed extension-tool governance, conservative
 unknown-tool fallback, scoped operator grants and explicit startup YOLO to the
 0.1.0 package candidate. No new published version is asserted.
 

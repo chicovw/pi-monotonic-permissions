@@ -54,6 +54,30 @@ filesystems. Races can change a target between policy evaluation, approval
 revalidation and native execution. The extension does not hold kernel-enforced
 capabilities or descriptors that eliminate those races.
 
+## Classification-control threats
+
+Schema V2 treats the workstation operator and their Nix-owned global policy and
+launcher configuration as trusted classification authorities. Repository content,
+project policy, prompts, model tool calls, and child runtime commands are not.
+The global policy alone owns canonical project-baseline entries. A repository
+therefore cannot register itself PUBLIC or lower its session classification;
+project-local resources and minimums only add restrictions.
+
+Resource rules resolve both lexical and canonical identities, so a symlink or
+canonical alias cannot select a different project/resource classification. A model
+has no classification-mutation tool or runtime command, and a statement such as
+"this is PUBLIC" is not an authority input. Once a PRIVATE label is stored or
+admitted, a PUBLIC wrapper cannot lower it on resume. A distinct `--no-session`
+operator launch is required for independent PUBLIC work.
+
+`PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION` is a trusted launch contract,
+not a provenance measurement. PMP can validate its case-sensitive value and
+capture it once, but cannot prove who constructed an arbitrary host process
+environment. A Nix-owned launcher/executor must set it only for an operator's
+fresh selection. Child context uses the separate inherited-context variable and
+only raises a child. Opaque Bash and extension operations remain operation-level
+classified because target attribution would not make their host access safe.
+
 ## Process and resource boundary
 
 An allowed `npm test`, interpreter, build, Git helper or arbitrary approved
@@ -115,7 +139,7 @@ PRIVATE < SECRET`; local trusted execution reaches `PRIVATE`, hosted defaults to
 `PUBLIC`, and `SECRET` is never eligible for normal generative inference.
 Projects can lower ceilings only. Missing declarations deny. This is an explicit
 `mayReleaseContext` contract for a future router, not automatic routing or a DLP
-system. Labels are declarations; V1.3 does not scan secrets or sanitize data.
+system. Labels are declarations; 0.1.0 does not scan secrets or sanitize data.
 
 Blackhole recall is an information-disclosure operation over session history.
 Read-only does not mean risk-free. Protected native filesystem policy does not
@@ -131,7 +155,7 @@ omission. Manual review remains necessary for the evaluated integration.
 
 A future hosted model could receive history created under a local/private routing
 assumption. History is subject to the release gate and is not automatically
-eligible after a route change. V1.3 does not select routes or sanitize data; the
+eligible after a route change. 0.1.0 does not select routes or sanitize data; the
 planned workstation run uses local oMLX and no automatic hosted fallback.
 
 ## YOLO

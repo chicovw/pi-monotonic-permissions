@@ -1,4 +1,5 @@
 /** Execution-environment eligibility. This is deliberately independent of tool policy. */
+import type { Target } from './paths.ts';
 export type Classification = 'PUBLIC' | 'INTERNAL' | 'PRIVATE' | 'SECRET';
 export type Ceiling = 'PUBLIC' | 'INTERNAL' | 'PRIVATE';
 export interface ResolvedRoute {
@@ -6,12 +7,28 @@ export interface ResolvedRoute {
   environment: 'LOCAL_TRUSTED' | 'HOSTED_CONTROLLED'; ceiling: Ceiling;
 }
 export interface ExecutionConfig {
-  context: Classification; history: Classification;
-  tools: Record<string, Classification>; routes: ResolvedRoute[];
-  ceiling?: Ceiling;
+  /** V1 compatibility fields are immutable floors, not V2 defaults. */
+  legacy?: true;
+  defaultClassification?: Classification;
+  minimumClassification?: Classification;
+  opaqueTools?: Record<string, Classification>; routes: ResolvedRoute[];
+  /** Deprecated V1 fields. Parsed V1 policy preserves their floor semantics. */
+  context: Classification; history: Classification; tools: Record<string, Classification>;
   protected?: { component: string; classification: Classification }[];
+  ceiling?: Ceiling;
+  projects?: { path: string; classification: Classification }[];
+  resources?: ResourceRule[];
 }
-export interface ProjectExecutionConfig { ceiling?: Ceiling; context?: Classification; history?: Classification }
+export interface ResourceRule {
+  component?: string;
+  base?: 'project' | 'home' | 'absolute';
+  path?: string;
+  kind?: 'file' | 'tree';
+  /** Bound only while loading operator/project policy. Never accepted from JSON. */
+  target?: Target;
+  classification: Classification;
+}
+export interface ProjectExecutionConfig { ceiling?: Ceiling; minimumClassification?: Classification; resources?: ResourceRule[] }
 
 const levels: Classification[] = ['PUBLIC', 'INTERNAL', 'PRIVATE', 'SECRET'];
 const ceilings: Ceiling[] = ['PUBLIC', 'INTERNAL', 'PRIVATE'];
@@ -34,6 +51,11 @@ const exact = (v: Record<string, unknown>, keys: string[]) => {
 const classification = (v: unknown): Classification => {
   if (!levels.includes(v as Classification)) throw new Error('EXECUTION_CLASSIFICATION');
   return v as Classification;
+};
+const startupClassification = (v: unknown): Classification => {
+  const value = classification(v);
+  if (value === 'SECRET') throw new Error('EXECUTION_STARTUP_CLASSIFICATION');
+  return value;
 };
 const ceiling = (v: unknown): Ceiling => {
   if (!ceilings.includes(v as Ceiling)) throw new Error('EXECUTION_CEILING');
@@ -80,21 +102,30 @@ export function parseExecution(value: unknown, global: boolean): ExecutionConfig
   safe(value);
   const r = obj(value);
   if (!global) {
-    exact(r, ['ceiling', 'context', 'history']);
+    exact(r, ['ceiling', 'context', 'history', 'minimumClassification', 'resources']);
     const project: ProjectExecutionConfig = {};
     if (r.ceiling !== undefined) project.ceiling = ceiling(r.ceiling);
-    if (r.context !== undefined) project.context = classification(r.context);
-    if (r.history !== undefined) project.history = classification(r.history);
+    // V1 project context/history were documented high-water inputs. Retain that
+    // meaning as a floor rather than silently reinterpreting them as defaults.
+    if (r.minimumClassification !== undefined && (r.context !== undefined || r.history !== undefined)) throw new Error('EXECUTION_MIGRATION');
+    if (r.minimumClassification !== undefined) project.minimumClassification = classification(r.minimumClassification);
+    else if (r.context !== undefined || r.history !== undefined) project.minimumClassification = maxClassification(
+      ...(r.context === undefined ? [] : [classification(r.context)]),
+      ...(r.history === undefined ? [] : [classification(r.history)]));
+    if (r.resources !== undefined) project.resources = resources(r.resources);
     return Object.freeze(project);
   }
-  exact(r, ['context', 'history', 'tools', 'routes', 'ceiling', 'protected']);
-  if (['context', 'history', 'tools', 'routes'].some(k => !(k in r))) throw new Error('EXECUTION_REQUIRED');
-  const toolsObj = obj(r.tools);
-  const tools: Record<string, Classification> = Object.create(null);
+  exact(r, ['context', 'history', 'tools', 'protected', 'defaultClassification', 'minimumClassification', 'opaqueTools', 'routes', 'ceiling', 'projects', 'resources']);
+  const legacy = 'context' in r || 'history' in r || 'tools' in r || 'protected' in r;
+  if (legacy && ['defaultClassification', 'minimumClassification', 'opaqueTools', 'projects', 'resources'].some(k => k in r)) throw new Error('EXECUTION_MIGRATION');
+  if (legacy && ['context', 'history', 'tools', 'routes'].some(k => !(k in r))) throw new Error('EXECUTION_REQUIRED');
+  if (!legacy && ['defaultClassification', 'opaqueTools', 'routes'].some(k => !(k in r))) throw new Error('EXECUTION_REQUIRED');
+  const toolsObj = obj(legacy ? r.tools : r.opaqueTools);
+  const opaqueTools: Record<string, Classification> = Object.create(null);
   if (Object.keys(toolsObj).length > 128) throw new Error('EXECUTION_SIZE');
   for (const [key, value] of Object.entries(toolsObj)) {
     if (!id(key)) throw new Error('EXECUTION_TOOL');
-    tools[key] = classification(value);
+    opaqueTools[key] = classification(value);
   }
   if (!Array.isArray(r.routes) || r.routes.length > 32) throw new Error('EXECUTION_ROUTES');
   const routes = r.routes.map(route);
@@ -104,16 +135,41 @@ export function parseExecution(value: unknown, global: boolean): ExecutionConfig
     if (seen.has(key)) throw new Error('EXECUTION_ROUTE_DUPLICATE');
     seen.add(key);
   }
-  const out: ExecutionConfig = { context: classification(r.context), history: classification(r.history), tools, routes };
+  const out: ExecutionConfig = legacy
+    ? { legacy: true, defaultClassification: 'PUBLIC', minimumClassification: maxClassification(classification(r.context), classification(r.history)), opaqueTools, routes,
+      context: classification(r.context), history: classification(r.history), tools: opaqueTools }
+    : { defaultClassification: startupClassification(r.defaultClassification), ...(r.minimumClassification === undefined ? {} : { minimumClassification: classification(r.minimumClassification) }), opaqueTools, routes,
+      context: 'PUBLIC', history: 'PUBLIC', tools: opaqueTools };
   if (r.ceiling !== undefined) out.ceiling = ceiling(r.ceiling);
-  if (r.protected !== undefined) {
-    if (!Array.isArray(r.protected) || r.protected.length > 128) throw new Error('EXECUTION_PROTECTED');
-    out.protected = r.protected.map(value => {
-      const rule = obj(value);
-      exact(rule, ['component', 'classification']);
-      if (!id(rule.component) || ['.', '..'].includes(rule.component) || /[/\\\x00-\x1f\x7f]/.test(rule.component)) throw new Error('EXECUTION_PROTECTED');
-      return { component: rule.component, classification: classification(rule.classification) };
+  if (legacy && r.protected !== undefined) { out.resources = resources(r.protected, true); out.protected = out.resources.map(rule => ({ component: rule.component!, classification: rule.classification })); }
+  if (!legacy && r.resources !== undefined) out.resources = resources(r.resources);
+  if (!legacy && r.projects !== undefined) {
+    if (!Array.isArray(r.projects) || r.projects.length > 128) throw new Error('EXECUTION_PROJECTS');
+    const seen = new Set<string>();
+    out.projects = r.projects.map(value => {
+      const project = obj(value); exact(project, ['path', 'classification']);
+      if (!id(project.path) || !project.path.startsWith('/')) throw new Error('EXECUTION_PROJECT');
+      if (seen.has(project.path)) throw new Error('EXECUTION_PROJECT_DUPLICATE');
+      seen.add(project.path);
+      return { path: project.path, classification: classification(project.classification) };
     });
   }
   return freeze(out);
+}
+
+function resources(value: unknown, legacy = false): ResourceRule[] {
+  if (!Array.isArray(value) || value.length > 128) throw new Error('EXECUTION_RESOURCE');
+  return value.map(value => {
+    const rule = obj(value);
+    exact(rule, legacy ? ['component', 'classification'] : ['component', 'base', 'path', 'kind', 'classification']);
+    if (typeof rule.component === 'string') {
+      if (!id(rule.component) || ['.', '..'].includes(rule.component) || /[/\\\x00-\x1f\x7f]/.test(rule.component)
+        || ['base', 'path', 'kind'].some(k => k in rule)) throw new Error('EXECUTION_RESOURCE');
+      return { component: rule.component, classification: classification(rule.classification) };
+    }
+    if (legacy || !['project', 'home', 'absolute'].includes(rule.base as string) || typeof rule.path !== 'string'
+      || (rule.kind !== 'file' && rule.kind !== 'tree')) throw new Error('EXECUTION_RESOURCE');
+    if (rule.base === 'absolute' ? !rule.path.startsWith('/') : rule.path.startsWith('/') || rule.path.startsWith('~')) throw new Error('EXECUTION_RESOURCE');
+    return { base: rule.base as ResourceRule['base'], path: rule.path, kind: rule.kind as ResourceRule['kind'], classification: classification(rule.classification) };
+  });
 }

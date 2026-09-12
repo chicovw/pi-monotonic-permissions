@@ -125,7 +125,7 @@ npm run validate
 node scripts/test-blackhole.mjs /absolute/path/to/unpacked-pi-blackhole
 # Optional authorized local oMLX run, using only disposable synthetic history:
 BLACKHOLE_LOCAL_OMLX=1 node scripts/test-blackhole.mjs /absolute/path/to/unpacked-pi-blackhole
-# Optional V1.3.1 compatibility check against approved local inference:
+# Optional 0.1.0 compatibility check against approved local inference:
 node scripts/test-cli-compat.mjs \
   --policy /absolute/path/to/global-policy.json \
   --unbundled /absolute/path/to/pi/dist/cli.js

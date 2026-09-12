@@ -7,7 +7,7 @@ import { createGate } from './gate-fixture.ts';
 import { fixture, policy, context, request } from './fixtures.ts';
 
 for (const mutation of [
-  (p: any) => p.version = 2,
+  (p: any) => p.version = 3,
   (p: any) => p.extra = true,
   (p: any) => p.tools.read = 'YES',
   (p: any) => p.paths.roots[0].path = '../outside',

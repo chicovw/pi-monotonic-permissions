@@ -25,7 +25,7 @@ Rejected wording: "secure sandbox", "prevents exfiltration", "protects all secre
 on every Pi version", and "independently audited". Documentation instead names
 the exact checked operation, preconditions and remaining boundary.
 
-## V1.3 claim review
+## 0.1.0 claim review
 
 | Claim | Implementation and evidence | Limit |
 |---|---|---|
@@ -44,6 +44,6 @@ the exact checked operation, preconditions and remaining boundary.
 | Memory workers off in fixture | memory:false, real agent events, source guard, no worker-start/error logs or ledger entries; no network in offline phase | Bounded run, not all possible host events; normal profile still gated |
 
 A disposable local oMLX model recovered omitted historical evidence using recall.
-No V1.3 normal-profile activation, remote CI, npm
+No 0.1.0 normal-profile activation, remote CI, npm
 publication or independent audit is claimed at Human Gate 1. Historical V1.2
-interactive/native evidence is not evidence for new V1.3 grant dialog layouts.
+interactive/native evidence is not evidence for new 0.1.0 grant dialog layouts.

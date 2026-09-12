@@ -2,7 +2,7 @@
 
 Reviewed against the installed `@earendil-works/pi-coding-agent` 0.85.1 and its nested `@earendil-works/pi-ai` 0.85.1 package. The installed package metadata identifies the upstream repository as `https://github.com/earendil-works/pi` and the coding-agent package directory as `packages/coding-agent`.
 
-V1.3.1 also reviewed the public runtime identity available to extensions. Pi's
+0.1.0 also reviewed the public runtime identity available to extensions. Pi's
 tagged `packages/coding-agent/src/index.ts` re-exports `VERSION` from `config.ts`,
 and `config.ts` derives it from the running package metadata. The installed
 `dist/index.js` and `dist/index.d.ts` expose the same value. Both Pi's bundled
@@ -60,17 +60,17 @@ provider requests are rechecked against the conservative session classification.
 
 Runtime qualification requires two independent facts: the public Pi `VERSION`
 must equal the explicitly reviewed `0.85.1`, and the registry must expose the
-reviewed private `runtime.prepareRequest` structure. V1.3 previously found the
+reviewed private `runtime.prepareRequest` structure. 0.1.0 previously found the
 version by resolving the public package to an on-disk `package.json`. That worked
 through unbundled Pi but failed closed in the bundled CLI, whose supported public
-module is virtual rather than filesystem-backed. V1.3.1 consumes `VERSION`
+module is virtual rather than filesystem-backed. 0.1.0 consumes `VERSION`
 directly and retains the structure check. Unknown versions, missing values,
 missing runtime methods, wrapper replacement, unresolved routes, and unsupported
 API transports remain fail closed.
 
 ## Conclusion
 
-Pi 0.85.1 provides a useful request construction path, but its extension events are observability/transformation hooks rather than a fail-closed authorization mechanism. The robust V1.3.1 seam combines Pi's public version value with the pinned post-auth private `ModelRuntime.prepareRequest` structure, an explicit route descriptor, and deny-by-default eligibility. Unsupported APIs and unapproved provider/API/endpoint triples remain ineligible.
+Pi 0.85.1 provides a useful request construction path, but its extension events are observability/transformation hooks rather than a fail-closed authorization mechanism. The robust 0.1.0 seam combines Pi's public version value with the pinned post-auth private `ModelRuntime.prepareRequest` structure, an explicit route descriptor, and deny-by-default eligibility. Unsupported APIs and unapproved provider/API/endpoint triples remain ineligible.
 The wrapper does not independently authenticate provider code or transport behavior. The seam must be requalified for every Pi version update and cannot claim to intercept arbitrary extension network activity.
 
 Primary source links:

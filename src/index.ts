@@ -8,6 +8,7 @@ import type { Snapshot } from './config.ts';
 import { compose, evaluate } from './policy.ts';
 import type { Action, Result, Policy } from './policy.ts';
 import { inside, componentMatch, resolveTarget } from './paths.ts';
+import type { Target } from './paths.ts';
 import { UnsupportedOperation, unsupportedMessages } from './bash.ts';
 import { inspectTargets } from './inspection.ts';
 import { describe } from './requests.ts';
@@ -15,7 +16,7 @@ import type { Request } from './requests.ts';
 import { fingerprint, GrantStore } from './grants.ts';
 import type { Grant } from './grants.ts';
 import { mayReleaseContext, maxClassification, minCeiling } from './eligibility.ts';
-import type { Classification, Ceiling, ResolvedRoute } from './eligibility.ts';
+import type { Classification, Ceiling, ResolvedRoute, ResourceRule } from './eligibility.ts';
 import { installRuntimeEligibility } from './pi-runtime.ts';
 import type { RuntimeIdentity } from './pi-runtime.ts';
 import { publishRuntimeAuthorityBroker } from './runtime-broker.ts';
@@ -38,7 +39,16 @@ type Context = Pick<ExtensionContext, 'cwd' | 'mode' | 'hasUI'> & {
   model?: ExtensionContext['model'];
   sessionManager?: Pick<ExtensionContext['sessionManager'], 'getBranch'> & Partial<Pick<ExtensionContext['sessionManager'], 'getSessionFile'>>;
 };
-export interface GateOptions { mode?: string; grantsPath?: string; toolInfo?: (name: string) => ToolInfo | undefined; resolveExecution?: (ctx: Context) => Promise<RuntimeIdentity>; recordClassification?: (value: Classification) => void; startupClassification?: unknown }
+export interface GateOptions {
+  mode?: string; grantsPath?: string; toolInfo?: (name: string) => ToolInfo | undefined;
+  resolveExecution?: (ctx: Context) => Promise<RuntimeIdentity>; recordClassification?: (value: Classification) => void;
+  /** V1 API compatibility. Prefer sessionClassification for a fresh operator launch. */
+  startupClassification?: unknown;
+  /** Trusted fresh-process operator selection. It is not child context handoff. */
+  sessionClassification?: unknown;
+  /** Parent-approved context released into a child process. */
+  inheritedClassification?: unknown;
+}
 export interface Diagnostic { tool: string; decision: string; code: string; layer: string; approvalRequested: boolean; approvalResult?: 'granted' | 'declined' }
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const eligibilityErrors = new Set(['CLASSIFICATION_DENY', 'CLASSIFICATION_UNAVAILABLE', 'EXECUTION_ROUTE_UNRESOLVED', 'EXECUTION_RUNTIME_UNAVAILABLE', 'EXECUTION_RUNTIME_CHANGED', 'EXECUTION_API_UNSUPPORTED']);
@@ -90,6 +100,24 @@ export function createGate(globalPath: string | undefined, diagnostics?: (event:
     if (!decision.allowed || !globalDecision.allowed) throw new Error('CLASSIFICATION_DENY');
     return digest({ route, classification, globalCeiling: s.global.execution?.ceiling, projectCeiling: s.project?.execution?.ceiling });
   }
+  function projectClassification(s: Snapshot): Classification {
+    return s.global.execution!.projects?.find(project => project.path === s.cwd)?.classification ?? 'PUBLIC';
+  }
+  function matchesResource(target: Target, rule: ResourceRule) {
+    if (rule.component) return componentMatch(target.lexical, rule.component) || componentMatch(target.canonical, rule.component);
+    const selected = rule.target;
+    if (!selected) throw new Error('CLASSIFICATION_UNAVAILABLE');
+    if (rule.kind === 'file') return target.lexical === selected.lexical || target.canonical === selected.canonical
+      || (target.exists && selected.exists && target.identity === selected.identity);
+    return inside(selected.lexical, target.lexical) || inside(selected.canonical, target.canonical);
+  }
+  function targetClassification(s: Snapshot, target: Target): Classification {
+    let value = projectClassification(s);
+    for (const rule of [...(s.global.execution!.resources ?? []), ...(s.project?.execution?.resources ?? [])]) {
+      if (matchesResource(target, rule)) value = maxClassification(value, rule.classification);
+    }
+    return value;
+  }
   async function routeEligibility(candidate: unknown): Promise<RouteEligibility> {
     try {
       const { s } = await currentSnapshot();
@@ -116,16 +144,17 @@ export function createGate(globalPath: string | undefined, diagnostics?: (event:
   }
   function classifyAction(s: Snapshot, action: Action) {
     const config = s.global.execution!;
-    // Discovery tools expose filesystem metadata and are governed by the native read ceiling
-    // unless an operator declares a stricter tool-specific classification.
-    const exposure = config.tools?.[action.tool] ?? (['find', 'ls'].includes(action.tool) ? config.tools?.read : undefined) ?? config.tools?.['*'];
-    if (!exposure) throw new Error('CLASSIFICATION_UNAVAILABLE');
-    let classification = maxClassification(contextClassification, exposure);
-    if (action.tool === 'recall') classification = maxClassification(classification, config.history!, s.project?.execution?.history ?? 'PUBLIC');
-    for (const { target } of action.targets) for (const rule of config.protected ?? []) {
-      if (componentMatch(target.lexical, rule.component) || componentMatch(target.canonical, rule.component)) classification = maxClassification(classification, rule.classification);
+    const targetClassifiable = ['read', 'grep', 'find', 'ls', 'write', 'edit'].includes(action.tool);
+    // V2 filesystem operations derive sensitivity from every preflighted target.
+    // V1 retains its documented whole-operation labels for compatibility.
+    if (targetClassifiable && !config.legacy) {
+      return maxClassification(contextClassification, ...action.targets.map(({ target }) => targetClassification(s, target)));
     }
-    return classification;
+    const exposure = config.opaqueTools?.[action.tool] ?? config.opaqueTools?.['*'];
+    if (!exposure) throw new Error('CLASSIFICATION_UNAVAILABLE');
+    let value = maxClassification(contextClassification, exposure);
+    for (const { target } of action.targets) value = maxClassification(value, targetClassification(s, target));
+    return value;
   }
   function admit(classification: Classification) {
     const next = maxClassification(contextClassification, classification);
@@ -184,19 +213,29 @@ export function createGate(globalPath: string | undefined, diagnostics?: (event:
         if (selectedMode !== undefined && selectedMode !== 'guarded' && selectedMode !== 'trusted' && selectedMode !== 'yolo') return;
         if (!globalPath || !isAbsolute(globalPath)) return;
         const loaded = await loadSnapshot(globalPath, cwd);
-        if (!loaded.global.execution?.context || !loaded.global.execution.history) return;
-        // An executor may seed the classification carried across a fresh --no-session child.
-        // It is an additional restrictive label, never a declassification mechanism. Invalid
-        // operator input fails closed with the rest of startup validation.
-        const seed = options.startupClassification === undefined ? undefined : (() => {
-          if (typeof options.startupClassification !== 'string' || !['PUBLIC', 'INTERNAL', 'PRIVATE', 'SECRET'].includes(options.startupClassification)) throw new Error('CLASSIFICATION_SEED_INVALID');
-          return options.startupClassification as Classification;
-        })();
-        const classification = maxClassification(loaded.global.execution.context, loaded.global.execution.history, loaded.project?.execution?.context ?? 'PUBLIC', loaded.project?.execution?.history ?? 'PUBLIC', ...previousClassifications, ...(seed ? [seed] : []));
+        if (!loaded.global.execution) return;
+        const session = options.sessionClassification ?? options.startupClassification;
+        const parseSeed = (value: unknown, allowSecret: boolean) => {
+          if (value === undefined) return undefined;
+          if (typeof value !== 'string' || !['PUBLIC', 'INTERNAL', 'PRIVATE', 'SECRET'].includes(value) || (!allowSecret && value === 'SECRET')) throw new Error('CLASSIFICATION_SEED_INVALID');
+          return value as Classification;
+        };
+        const selected = parseSeed(session, false);
+        const inherited = parseSeed(options.inheritedClassification, true);
+        const stored = previousClassifications.map(value => parseSeed(value, true)!);
+        const config = loaded.global.execution as import('./eligibility.ts').ExecutionConfig;
+        // Defaults choose the classification of an otherwise empty fresh session.
+        // Floors, inherited releases, project authority, and stored admissions are evidence
+        // or restrictions and only ever raise the live session.
+        const classification = maxClassification(selected ?? config.defaultClassification!, config.minimumClassification ?? 'PUBLIC',
+          loaded.project?.execution?.minimumClassification ?? 'PUBLIC', projectClassification(loaded), ...stored, ...(inherited ? [inherited] : []));
         const identity = digest(await identities(loaded));
         const source = await resolveTarget(sourceRoot, cwd);
         if (epoch === current) {
-          if (classification !== maxClassification('PUBLIC', ...previousClassifications)) options.recordClassification?.(classification);
+          // V2 records an initial PUBLIC label so a later resume cannot silently
+          // fall back to the workstation default. Preserve V1's historical no-op
+          // PUBLIC recording for installed policies during migration.
+          if ((!config.legacy && !stored.length) || (stored.length && classification !== maxClassification(...stored)) || (config.legacy && classification !== 'PUBLIC' && !stored.length)) options.recordClassification?.(classification);
           snapshot = loaded; contextClassification = classification; policyIdentity = identity; canonicalSourceRoot = source.canonical;
         }
       } catch { /* Keep the registered gate alive and blocking. Never discard it. */ }
@@ -336,7 +375,8 @@ export default function piMonotonicPermissions(pi: ExtensionAPI) {
   let runtimeGate: ReturnType<typeof installRuntimeEligibility> | undefined;
   const gate = createGate(process.env.PI_MONOTONIC_PERMISSIONS_POLICY, undefined, evaluate, {
     mode: process.env.PI_MONOTONIC_PERMISSIONS_PROFILE,
-    startupClassification: process.env.PI_MONOTONIC_PERMISSIONS_CONTEXT_CLASSIFICATION,
+    sessionClassification: process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION,
+    inheritedClassification: process.env.PI_MONOTONIC_PERMISSIONS_CONTEXT_CLASSIFICATION,
     grantsPath: join(agentDir, 'pi-monotonic-permissions', 'grants.json'),
     toolInfo: name => pi.getAllTools().find(t => t.name === name),
     resolveExecution: async ctx => { if (!runtimeGate) throw new Error('EXECUTION_RUNTIME_UNAVAILABLE'); return runtimeGate.resolve(ctx.model); },

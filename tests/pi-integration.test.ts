@@ -232,3 +232,27 @@ test('actual Pi persists admission classification and denies hosted release afte
   const result = await resumed.modelRuntime.completeSimple(hostedModel,{messages:[{role:'user',content:'synthetic',timestamp:Date.now()}]});
   assert.equal(result.stopReason,'error'); assert.match(result.errorMessage!,/CLASSIFICATION_DENY/); assert.equal(providerCalls,0);
 });
+
+test('actual Pi V2 captures direct fresh PUBLIC selection separately from its PRIVATE default', async t => {
+  const f = await fixture(); t.after(f.cleanup);
+  const p = policy(); p.version = 2; p.execution = {
+    defaultClassification: 'PRIVATE', opaqueTools: { bash: 'PRIVATE', recall: 'PRIVATE' },
+    routes: [{ provider: model.provider, api: model.api, baseUrl: model.baseUrl, runtime: 'offline-synthetic-fixture', environment: 'LOCAL_TRUSTED', ceiling: 'PRIVATE' }]
+  } as any;
+  await f.setGlobal(p);
+  const prior = process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION;
+  try {
+    process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION = 'PUBLIC';
+    const publicSession = await sessionFor(f, ['read']); t.after(() => publicSession.session.dispose());
+    const publicLabels = publicSession.session.sessionManager.getEntries().filter((e: any) => e.customType === 'pi-monotonic-permissions.classification');
+    assert.deepEqual((publicLabels.at(-1) as any).data, { classification: 'PUBLIC' });
+    publicSession.session.dispose();
+    delete process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION;
+    const defaultSession = await sessionFor(f, ['read']); t.after(() => defaultSession.session.dispose());
+    const defaultLabels = defaultSession.session.sessionManager.getEntries().filter((e: any) => e.customType === 'pi-monotonic-permissions.classification');
+    assert.deepEqual((defaultLabels.at(-1) as any).data, { classification: 'PRIVATE' });
+  } finally {
+    if (prior === undefined) delete process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION;
+    else process.env.PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION = prior;
+  }
+});

@@ -4,7 +4,7 @@ No external repository, tag, release or registry publication is created by this
 checklist. Execute only after reviewing the package. Keep the existing internal
 consumer unchanged until a separate migration decision.
 
-## V1.3 human gates
+## 0.1.0 human gates
 
 The public identity is `github.com/chicovw/pi-monotonic-permissions`.
 Prepare and validate locally, then stop without staging or committing. The human
@@ -16,8 +16,8 @@ Before a public release, verify private vulnerability reporting at the repositor
 review package contents and run remote CI before claiming Linux compatibility.
 Keep credentials, runtime grants, sessions and operator policy out of source.
 
-Suggested commit subject: `Add V1.3 extensible tool governance, grants and operator YOLO`.
-Package semantic version remains 0.1.0; the V1.3 development label is not a tag.
+Suggested commit subject: `Add 0.1.0 extensible tool governance, grants and operator YOLO`.
+Package semantic version is 0.1.0.
 
 ## Tag and release later (human only)
 

@@ -1,4 +1,4 @@
-# Policy reference: schema version 1
+# Policy reference: schema versions 1 and 2
 
 This document describes implemented fields, not proposed configuration. The early
 0.x API may evolve. JSON values must have the documented structure; unknown keys,
@@ -22,66 +22,73 @@ are required. Project policy requires
 file. There are no includes, priorities, environment interpolation or last-match
 rules. Missing project fields contribute ALLOW independently of global policy.
 
-## Execution eligibility
+## Execution eligibility and classification authority
 
-The separate execution declaration defines `context`, `history`, classified
-`tools`, and resolved `routes`. Classifications are exactly `PUBLIC`, `INTERNAL`,
-`PRIVATE`, and `SECRET`, ordered from least to most restricted. A route is
-`LOCAL_TRUSTED` (loopback, maximum `PRIVATE`) or `HOSTED_CONTROLLED` (V1.3
-maximum `PUBLIC`). `SECRET` is always denied for normal generative processing.
-The project `execution` section may lower the route ceiling and may raise the
-declared context/history classification, but cannot raise the ceiling.
+Classifications are exactly `PUBLIC < INTERNAL < PRIVATE < SECRET`. `PUBLIC`
+means information the operator approves for an approved PUBLIC hosted provider;
+`INTERNAL` is non-public material; `PRIVATE` is proprietary, personal or otherwise
+local-only material; and `SECRET` is credential or equivalent secret material.
+`SECRET` is never eligible for normal generative processing. A `LOCAL_TRUSTED`
+route may have a maximum `PRIVATE` ceiling; `HOSTED_CONTROLLED` is limited to
+`PUBLIC`.
 
-Eligibility is checked before policy, grants, and mode. Missing or malformed
-declarations deny. `mayReleaseContext` is the stable pure seam a future router
-can call; V1.3 does not select models/routes or sanitize data. Runtime identity
-uses resolved provider, API and endpoint characteristics, never model names.
-Persistent or session grants cannot override classification denial.
-
-The global `execution` object has exactly these fields:
+Schema version 2 separates defaults, restrictions, and admitted evidence. A
+global V2 declaration requires `defaultClassification`, `opaqueTools`, and
+`routes`, and may contain `minimumClassification`, `ceiling`, `projects`, and
+`resources`:
 
 ```json
-{"context":"PRIVATE","history":"PRIVATE","tools":{"read":"PRIVATE"},
- "routes":[{"provider":"omlx","api":"openai-completions",
- "baseUrl":"http://127.0.0.1:8000/v1","runtime":"omlx",
- "environment":"LOCAL_TRUSTED","ceiling":"PRIVATE"}],
- "ceiling":"PRIVATE","protected":[{"component":".env","classification":"SECRET"}]}
+{"defaultClassification":"PRIVATE","opaqueTools":{"bash":"PRIVATE","recall":"PRIVATE"},
+ "routes":[{"provider":"omlx","api":"openai-completions","baseUrl":"http://127.0.0.1:8000/v1",
+ "runtime":"omlx","environment":"LOCAL_TRUSTED","ceiling":"PRIVATE"}],
+ "projects":[{"path":"/absolute/path/to/Mels","classification":"PUBLIC"}],
+ "resources":[{"component":".env","classification":"SECRET"},
+              {"base":"project","path":"docs/internal","kind":"tree","classification":"PRIVATE"}]}
 ```
 
-`context`, `history`, `tools`, and `routes` are required. Tool names and route
-identity strings are bounded non-empty strings (maximum 256 characters); there
-are at most 128 tool declarations, 32 routes, and 128 protected component rules.
-Routes match the post-authentication `provider`, `api`, and `baseUrl` exactly.
-Duplicate triples are rejected, even when their `runtime` labels differ. `runtime`
-is the operator's attestation of the reviewed service at that endpoint, not a
-Pi-exposed provenance measurement. Hosted routes are limited to `PUBLIC` in this
-version. Protected rules match both lexical and canonical path components and only raise classification. A tool declaration
-asserts the classification of the entire operation, including opaque subprocess
-or custom-tool exposure; no Bash or unknown-tool exposure is assumed by default.
-`SECRET` cannot be made eligible by any ceiling or mode.
+`defaultClassification` selects an empty fresh session only. A true
+`minimumClassification` is optional and explicit. Operator project entries are
+absolute paths, resolved to their canonical directory identity at load time; the
+matching entry supplies a project baseline. They exist only in the global,
+operator-owned policy. A repository cannot register itself. The project policy
+may set `minimumClassification`, lower a route `ceiling`, and add `resources`,
+which can only raise the resulting label.
 
-The project `execution` object supports only `ceiling`, `context`, and `history`.
-It may lower the ceiling and may raise the declared context/history high-water
-classification conservatively; it cannot raise the global route ceiling.
+Resources select an exact `component`, an exact `file`, or a `tree`; file/tree
+forms use `base: project|home|absolute`, `path`, and `kind`. Component matching
+uses lexical and canonical identities. File matching also recognizes the same
+existing inode and tree matching checks lexical and canonical containment.
+Symlink aliases therefore cannot escape a resource classification.
 
+Native `read`, `grep`, `find`, `ls`, `write`, and `edit` are target-classifiable:
+their label is the maximum of every bounded preflight target, including path names
+disclosed by discovery. They do not become PRIVATE merely because of their tool
+identity. `bash`, recall, unknown extensions, and every other opaque operation
+require an `opaqueTools` exact or `"*"` label. Omitted opaque labels deny. This is
+an operator assertion about complete exposure, not a sandbox proof.
 
-`ceiling` and `protected` are optional globally. Omitted tool names deny unless
-an explicit `"*"` exposure declaration exists. Exact tool-name declarations take
-precedence over `"*"`. Every declaration covers all input/output exposure of that
-tool, including opaque program behavior. Declaring arbitrary programs PRIVATE
-is an operator assertion, not proof that they cannot read a secret. The example
-intentionally omits Bash and unknown tools. Add declarations only after reviewing
-their exposure in the intended environment.
+At initialization PMP captures `PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION`
+only as a case-sensitive `PUBLIC`, `INTERNAL`, or `PRIVATE` fresh-session choice.
+It is separate from `PI_MONOTONIC_PERMISSIONS_CONTEXT_CLASSIFICATION`, which is a
+parent-approved inherited child label and may also be `SECRET`. Both malformed
+values fail closed. Neither is model-callable or runtime mutable. V2 persists an
+initial label, including PUBLIC, in `pi-monotonic-permissions.classification` so a
+resume restores its actual high-water. A resumed PRIVATE session remains PRIVATE
+even if launched through a PUBLIC wrapper; use a genuinely fresh `--no-session`
+launch to start distinct PUBLIC work.
 
-The effective context label is the maximum of global context, global history,
-project context/history, and saved session admission labels. An admitted tool
-raises that label when necessary, before execution. A custom session entry named
-`pi-monotonic-permissions.classification` stores only `{classification: ...}`.
-Compaction, branch changes and resume never automatically downgrade it. Classifying
-history PRIVATE consequently excludes the entire session from a PUBLIC hosted
-route, even before recall. A new separately authorized sanitized session is needed
-for a lower classification. Missing or malformed declarations and stored labels
-fail closed. This is conservative context accounting, not content inspection.
+The initial live label is the maximum of the fresh selection (or default), any
+explicit floor, operator project baseline, project-local floor, inherited child
+label, and stored session labels. Each authorized target/opaque operation can
+raise it before execution. Nothing lowers it during a session, after compaction,
+or through a model prompt. Eligibility is checked before ordinary policy, grants,
+and mode, and grants cannot override it.
+
+Schema V1 remains accepted unchanged: its required `context` and `history` fields
+are preserved as a compatibility minimum classification and its `tools` entries
+remain whole-operation labels. This intentionally retains V1's conservative
+behavior. Migrate to V2 to use target-classified filesystem operations and fresh
+PUBLIC sessions.
 
 URLs may not contain credentials, queries, or fragments. LOCAL_TRUSTED requires
 HTTP(S) loopback `127.0.0.1` or `[::1]`; HOSTED_CONTROLLED requires HTTPS and a
@@ -271,7 +278,7 @@ custom session/persistent choices are described below. No executable-wide grant 
 Diagnostics are off by default. Native session logging is Pi's responsibility and
 may include arguments/results even though extension diagnostics omit payloads.
 
-## Custom tools (implemented V1.3 fields)
+## Custom tools (implemented 0.1.0 fields)
 
 `customTools` is optional in both global and project policy. It accepts only:
 
@@ -337,7 +344,7 @@ unknown policy, with no Always Allow. Source/package review remains required.
 Recall returns session history, including omitted tool outputs, not native file
 permission. Its information boundary is described in the threat model.
 
-## Operator grants (implemented V1.3 state)
+## Operator grants (implemented 0.1.0 state)
 
 Grants are not policy fields. Effective DENY is checked before any grant lookup.
 Only effective ASK may be resolved by a grant. Supported UI choices:
@@ -385,8 +392,7 @@ and deletion; removal takes effect on the next persistent lookup.
 
 ## Status of the interface
 
-All fields above are implemented in the unreleased V1.3 development tree; schema
-version remains 1 and package version remains 0.1.0. They are an evolving 0.x API,
+All fields above are implemented in the 0.1.0 development tree. They are an evolving 0.x API,
 not a claim of a newly published stable release. No undocumented experimental
 policy fields are accepted. Runtime mode switching, generic adapter loading,
 per-executable grants and browser/delegation adapters are design-only/deferred

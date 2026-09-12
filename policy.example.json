@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "profile": "guarded",
   "tools": {
     "read": "ALLOW",
@@ -88,16 +88,10 @@
     }
   },
   "execution": {
-    "context": "PRIVATE",
-    "history": "PRIVATE",
-    "tools": {
-      "read": "PRIVATE",
-      "write": "PRIVATE",
-      "edit": "PRIVATE",
-      "grep": "PRIVATE",
-      "recall": "PRIVATE",
-      "find": "PRIVATE",
-      "ls": "PRIVATE"
+    "defaultClassification": "PRIVATE",
+    "opaqueTools": {
+      "bash": "PRIVATE",
+      "recall": "PRIVATE"
     },
     "routes": [
       {
@@ -109,7 +103,7 @@
         "ceiling": "PRIVATE"
       }
     ],
-    "protected": [
+    "resources": [
       {
         "component": ".env",
         "classification": "SECRET"

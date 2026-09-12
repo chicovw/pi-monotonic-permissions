@@ -1,6 +1,6 @@
 # pi-blackhole 0.5.3 source review
 
-Reviewed 2026-09-11 for the V1.3 adapter. The inspected artifact is the npm
+Reviewed 2026-09-11 for the 0.1.0 adapter. The inspected artifact is the npm
 package `pi-blackhole@0.5.3`, downloaded from the npm registry:
 
 - tarball: <https://registry.npmjs.org/pi-blackhole/-/pi-blackhole-0.5.3.tgz>
@@ -95,7 +95,7 @@ long search results exceeded 250,000 characters in 0.5.2.
 `UnifiedConfig.memory` defaults to `true`. `maybeLaunchConsolidation()` exits
 before launching any worker when `runtime.config.memory === false`; this is the
 entry point for Observer, Reflector, and Dropper consolidation. Therefore the
-V1.3 integration must set `memory: false` and verify logs/model requests to
+0.1.0 integration must set `memory: false` and verify logs/model requests to
 confirm no memory-worker calls. Recall and deterministic compaction remain
 available because they are separate paths.
 
@@ -114,7 +114,7 @@ reports that earlier releases failed to gate all worker entry points. The
 0.5.3 source has the explicit consolidation guard; qualification should still
 exercise the exact pinned runtime.
 
-## Upstream issue risks relevant to V1.3
+## Upstream issue risks relevant to 0.1.0
 
 Issue #54 demonstrates why the adapter must classify `#N:path` by the same
 lineage scope as ordinary recall. Issue #82 demonstrates that adapter tests

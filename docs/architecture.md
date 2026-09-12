@@ -60,7 +60,7 @@ Eligibility is evaluated first using `PUBLIC < INTERNAL < PRIVATE < SECRET`.
 The route ceiling is authoritative; a project may lower it, never raise it.
 `mayReleaseContext` is the small pure contract available to future routing or
 delegation. Missing labels, unsupported runtime identity and invalid declarations
-fail closed. V1.3 does not select routes or sanitize data.
+fail closed. 0.1.0 does not select routes or sanitize data.
 
 Global/project policy is evaluated independently with `ALLOW < ASK < DENY`.
 Missing project fields are neutral. Neither grants nor project configuration can
@@ -123,6 +123,31 @@ A loaded gate with invalid policy or execution declarations blocks in all modes.
 means no gate exists. Check the extension list and footer. Neither this package
 nor its grants provide a mandatory launcher, process containment or telemetry.
 
+## Classification authority and lifetime (schema V2)
+
+The global, operator-owned policy chooses `defaultClassification` for an empty
+fresh session and may specify an explicit `minimumClassification`. Those are
+different concepts: the former is a choice made before data is admitted; the
+latter is a restriction. A trusted operator launcher may replace the default
+once with `PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION=PUBLIC|INTERNAL|PRIVATE`.
+This captured selection is distinct from
+`PI_MONOTONIC_PERMISSIONS_CONTEXT_CLASSIFICATION`, which carries parent-approved
+child context and can only raise a child.
+
+The same global policy owns canonical project-baseline entries. Repository policy
+may add a minimum, lower a ceiling, or add resource labels, but cannot create a
+project entry or lower any label. Resources select components, exact files, or
+trees with lexical and canonical path handling. Filesystem-native read, grep,
+find, ls, write and edit derive classification from all bounded exposed targets.
+Bash, recall and unknown extensions remain opaque operation-level declarations.
+
+The live high-water is the maximum of selection/default, actual floors, project
+baseline, stored session labels, inherited child label, and admitted exposure.
+V2 stores even an initial PUBLIC label so resume is faithful. A live session has
+no downgrade path. V1 `context`, `history`, and `tools` retain their documented
+whole-operation/floor behavior as a compatibility mode; they are not silently
+given V2 semantics.
+
 ## Resolved execution seam and classification lifetime
 
 The exported `mayReleaseContext` contract rejects SECRET and classifications above
@@ -139,13 +164,11 @@ wrappers; session shutdown leaves a rejecting wrapper. This is a maintenance
 boundary, not a promise of compatibility with future Pi versions or arbitrary
 providers. See [the source review](pi-eligibility-seam-review.md).
 
-The context floor includes global/project context and history declarations and
-all recorded admission labels. Tool exposure can raise it; compaction does not
-lower it. Only classification metadata is appended to the Pi session. On resume,
-all such labels are included conservatively. This prevents a later hosted route
-from receiving already admitted PRIVATE context under a lower current default.
-It cannot detect an incorrect operator classification, a secret pasted into
-PUBLIC-labelled input, or an installed extension bypassing the runtime altogether.
+The live high-water includes stored admission labels and never decreases on
+compaction or resume. This prevents a later hosted route from receiving already
+admitted PRIVATE context under a lower default. It cannot detect an incorrect
+operator classification, a secret pasted into PUBLIC-labelled input, or an
+installed extension bypassing the runtime altogether.
 # OpenAI Codex response backend
 
 Pi 0.85.1's `openai-codex-responses` provider has a distinct backend contract.

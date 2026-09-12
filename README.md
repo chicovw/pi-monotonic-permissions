@@ -2,8 +2,7 @@
 
 Deterministic, monotonic permission enforcement for Pi tool calls.
 
-V1.3.1 is an unreleased compatibility follow-up to the V1.3 architecture update
-in the early `0.1.0` package candidate. It targets **Earendil Works Pi 0.85.1**, using Node 24
+`0.1.0` is the current package version. It targets **Earendil Works Pi 0.85.1**, using Node 24
 or later. There are no additional runtime dependencies. The policy schema is an
 early public API and may change before 1.0.
 
@@ -148,7 +147,7 @@ in that order. Approved loopback `LOCAL_TRUSTED` execution may process up to
 `PRIVATE`; `HOSTED_CONTROLLED` execution defaults to `PUBLIC`; `SECRET` is
 never eligible for normal generative processing. A project may lower a ceiling,
 never raise it. Grants cannot override eligibility denial, and labels are
-caller/operator declarations: V1.3 provides no secret scanner or automatic
+caller/operator declarations: 0.1.0 provides no secret scanner or automatic
 sanitization.
 
 | Classification | Meaning |
@@ -160,7 +159,7 @@ sanitization.
 
 Use credentials through deterministic or human-controlled mechanisms that do not
 expose their values to the model. Classification compares the declared material
-against the resolved environment ceiling, not the model name. V1.3 supports
+against the resolved environment ceiling, not the model name. 0.1.0 supports
 hosted ceilings of PUBLIC only; it does not grant broader hosted authorization or
 perform sanitization.
 
@@ -171,6 +170,67 @@ perform sanitization.
 - **Mode** is the operator's autonomy choice. Guarded adds native write/edit ASK;
   trusted permits ordinary edits where policy allows. YOLO bypasses ordinary
   tool-policy approval only after execution eligibility passes.
+
+## Operator-controlled classification (schema V2)
+
+PMP enforces classification. The workstation operator, not a prompt, model, or
+repository, declares it. The order is deliberately explicit:
+
+```text
+fresh selection or default
+  + explicit global/project floors
+  + operator-owned project baseline
+  + inherited/resumed admitted labels
+  + classified operation targets
+  = monotonic session high-water
+```
+
+`PUBLIC` is material the operator approves for an approved PUBLIC hosted route.
+`INTERNAL` is non-public material and remains local-only until an appropriate
+route is explicitly qualified. `PRIVATE` is proprietary, unpublished, personal,
+or otherwise local-only material. `SECRET` includes credentials and equivalent
+secret material, and is never normally sent to a generative route.
+
+Use schema V2 for a global policy that supports PUBLIC sessions. Its `execution`
+object requires `defaultClassification`, `opaqueTools`, and `routes`. Normal
+`pi` should use `defaultClassification: "PRIVATE"`. A declarative, operator-owned
+PUBLIC launcher must start a new Pi session and set exactly:
+
+```sh
+PI_MONOTONIC_PERMISSIONS_SESSION_CLASSIFICATION=PUBLIC pi --no-session
+```
+
+The value is captured once as case-sensitive `PUBLIC`, `INTERNAL`, or `PRIVATE`.
+Malformed values block. It is intentionally distinct from
+`PI_MONOTONIC_PERMISSIONS_CONTEXT_CLASSIFICATION`, which a trusted controller may
+use to carry already-approved parent context into a child. There is no runtime
+downgrade command. A PUBLIC wrapper that resumes a PRIVATE session stays PRIVATE.
+
+Put operator project baselines in global policy, outside repositories:
+
+```json
+"projects": [{"path":"/absolute/path/to/Mels","classification":"PUBLIC"}]
+```
+
+PMP resolves this path to its canonical directory identity at startup. A project
+file cannot create or lower this entry. The repository-local
+`.pi/pi-monotonic-permissions.json` can set `execution.minimumClassification`, a
+lower route ceiling, or additional resource rules, so it can tighten but not
+grant hosted eligibility.
+
+Use `resources` to raise individual component, file, or tree labels. Native
+`read`, `grep`, `find`, `ls`, `write`, and `edit` derive sensitivity from their
+bounded target set, including names exposed by listing. Consequently public
+source work stays PUBLIC, while touching a PRIVATE target raises the session and
+touching a SECRET target is denied. `bash`, recall, unknown tools, and other
+opaque operations instead require `opaqueTools` declarations because their full
+exposure cannot be attributed to bounded targets. See the complete
+[policy reference](docs/policy-reference.md).
+
+Schema V1 is compatible but intentionally conservative: its `execution.context`
+and `history` remain true minimums and its `tools` labels retain whole-operation
+meaning. Migrate an operator policy to V2 rather than expecting a V1 PUBLIC seed
+to lower those documented floors.
 
 ## True YOLO
 
@@ -232,7 +292,7 @@ Recall reads prior Pi/Blackhole session history, including earlier tool results.
 It does not grant native filesystem permission, but it **is an information-disclosure
 capability**. History may contain information omitted from active context.
 History is not automatically eligible context. Recall must pass the same release
-gate. V1.3 does not select routes or sanitize data automatically.
+gate. 0.1.0 does not select routes or sanitize data automatically.
 
 For the initial integration set `memory: false`, `compaction: "manual"`, and
 `compactionEngine: "blackhole"`. Compaction plus session-history recall is separate
@@ -324,13 +384,13 @@ pins remain essential. Inspect/delete grants using the simple file operations in
 
 ## Validation and contributing
 
-The standalone suite contains **265 tests**, passed on macOS arm64 with Pi 0.85.1.
+The standalone suite contains **277 tests**, passed on macOS arm64 with Pi 0.85.1.
 It exercises policy, filesystem fixtures and real Pi tool interception using
 deterministic streams, with no provider service or credentials. The V1.2 runtime
 previously passed interactive 80x24/120x60 approval checks, a local-model
 coding workflow and a normal-profile activation smoke. Those are historical manual
 evidence, not portable CI claims. GitHub CI at the pre-fix public commit passed
-on Ubuntu 24.04 and macOS 14. The V1.3.1 working tree must obtain its own green
+on Ubuntu 24.04 and macOS 14. The 0.1.0 working tree must obtain its own green
 public CI result after the human gate.
 
 ```sh
