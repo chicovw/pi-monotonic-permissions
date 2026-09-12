@@ -95,3 +95,20 @@ test('startup context classification is retained when later operator defaults ar
   p.execution.context='PUBLIC';await f.setGlobal(p);await g.start(f.cwd,labels);
   await assert.rejects(g.release(hosted));
 });
+
+test('operator startup classification seed is monotonic and fail closed', async t => {
+  const f = await fixture(); t.after(f.cleanup);
+  const make = async (seed: unknown, context = 'PUBLIC' as Classification) => {
+    const p = policy(); p.execution.context = context; await f.setGlobal(p);
+    const g = createGate(f.globalPath, undefined, undefined, { mode: 'yolo', startupClassification: seed, resolveExecution: async () => fixtureIdentity });
+    await g.start(f.cwd); return g;
+  };
+  // No seed preserves the existing policy-derived classification.
+  assert.equal((await (await make(undefined)).call(request('read', 'safe.txt'), context(f.cwd)))?.block, undefined);
+  // A seed may raise, never lower, and SECRET is still ineligible even in YOLO.
+  assert.equal((await (await make('PRIVATE')).call(request('read', 'safe.txt'), context(f.cwd)))?.block, undefined);
+  assert.equal((await (await make('INTERNAL')).call(request('read', 'safe.txt'), context(f.cwd)))?.block, undefined);
+  assert.equal((await (await make('PUBLIC', 'PRIVATE')).call(request('read', 'safe.txt'), context(f.cwd)))?.block, undefined);
+  assert.equal((await (await make('SECRET')).call(request('read', 'safe.txt'), context(f.cwd)))?.block, true);
+  assert.equal((await (await make('private')).call(request('read', 'safe.txt'), context(f.cwd)))?.block, true);
+});

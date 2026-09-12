@@ -364,3 +364,5 @@ has a filesystem path when Pi loads extensions through its bundled virtual modul
 ### Delegated execution eligibility
 
 Delegation controllers may use the side-effect-free `mayReleaseContext` export to check whether already-classified context may be released to an already-resolved execution route. The seam performs no routing, process launch, policy mutation, or grant mutation. It enforces the same classification ceilings and SECRET restriction as the runtime gate; ordinary tool policy and delegated capability resolution remain separate concerns.
+
+An operator-controlled fresh-child handoff may set `PI_MONOTONIC_PERMISSIONS_CONTEXT_CLASSIFICATION` to `PUBLIC`, `INTERNAL`, `PRIVATE`, or `SECRET`. The label is combined with policy and historical labels using the maximum classification, so it can only make the starting context more restrictive. Invalid values fail closed; an absent variable preserves existing behavior. It is not model-controlled and cannot declassify context.

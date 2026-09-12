@@ -33,7 +33,7 @@ type Context = Pick<ExtensionContext, 'cwd' | 'mode' | 'hasUI'> & {
   model?: ExtensionContext['model'];
   sessionManager?: Pick<ExtensionContext['sessionManager'], 'getBranch'> & Partial<Pick<ExtensionContext['sessionManager'], 'getSessionFile'>>;
 };
-export interface GateOptions { mode?: string; grantsPath?: string; toolInfo?: (name: string) => ToolInfo | undefined; resolveExecution?: (ctx: Context) => Promise<RuntimeIdentity>; recordClassification?: (value: Classification) => void }
+export interface GateOptions { mode?: string; grantsPath?: string; toolInfo?: (name: string) => ToolInfo | undefined; resolveExecution?: (ctx: Context) => Promise<RuntimeIdentity>; recordClassification?: (value: Classification) => void; startupClassification?: unknown }
 export interface Diagnostic { tool: string; decision: string; code: string; layer: string; approvalRequested: boolean; approvalResult?: 'granted' | 'declined' }
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const eligibilityErrors = new Set(['CLASSIFICATION_DENY', 'CLASSIFICATION_UNAVAILABLE', 'EXECUTION_ROUTE_UNRESOLVED', 'EXECUTION_RUNTIME_UNAVAILABLE', 'EXECUTION_RUNTIME_CHANGED', 'EXECUTION_API_UNSUPPORTED']);
@@ -154,7 +154,14 @@ export function createGate(globalPath: string | undefined, diagnostics?: (event:
         if (!globalPath || !isAbsolute(globalPath)) return;
         const loaded = await loadSnapshot(globalPath, cwd);
         if (!loaded.global.execution?.context || !loaded.global.execution.history) return;
-        const classification = maxClassification(loaded.global.execution.context, loaded.global.execution.history, loaded.project?.execution?.context ?? 'PUBLIC', loaded.project?.execution?.history ?? 'PUBLIC', ...previousClassifications);
+        // An executor may seed the classification carried across a fresh --no-session child.
+        // It is an additional restrictive label, never a declassification mechanism. Invalid
+        // operator input fails closed with the rest of startup validation.
+        const seed = options.startupClassification === undefined ? undefined : (() => {
+          if (typeof options.startupClassification !== 'string' || !['PUBLIC', 'INTERNAL', 'PRIVATE', 'SECRET'].includes(options.startupClassification)) throw new Error('CLASSIFICATION_SEED_INVALID');
+          return options.startupClassification as Classification;
+        })();
+        const classification = maxClassification(loaded.global.execution.context, loaded.global.execution.history, loaded.project?.execution?.context ?? 'PUBLIC', loaded.project?.execution?.history ?? 'PUBLIC', ...previousClassifications, ...(seed ? [seed] : []));
         const identity = digest(await identities(loaded));
         const source = await resolveTarget(sourceRoot, cwd);
         if (epoch === current) {
@@ -288,6 +295,7 @@ export default function piMonotonicPermissions(pi: ExtensionAPI) {
   let runtimeGate: ReturnType<typeof installRuntimeEligibility> | undefined;
   const gate = createGate(process.env.PI_MONOTONIC_PERMISSIONS_POLICY, undefined, evaluate, {
     mode: process.env.PI_MONOTONIC_PERMISSIONS_PROFILE,
+    startupClassification: process.env.PI_MONOTONIC_PERMISSIONS_CONTEXT_CLASSIFICATION,
     grantsPath: join(agentDir, 'pi-monotonic-permissions', 'grants.json'),
     toolInfo: name => pi.getAllTools().find(t => t.name === name),
     resolveExecution: async ctx => { if (!runtimeGate) throw new Error('EXECUTION_RUNTIME_UNAVAILABLE'); return runtimeGate.resolve(ctx.model); },
