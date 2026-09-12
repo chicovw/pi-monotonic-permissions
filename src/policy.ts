@@ -48,7 +48,7 @@ export function evaluate(policy: Policy, action: Action, layer: 'global' | 'proj
   const add = (decision: Decision | undefined, code: string) => {
     if (decision && decision !== 'ALLOW') reasons.push({ decision, layer, code });
   };
-  const tool = action.tool === 'grep' ? 'read' : action.tool;
+  const tool = ['grep', 'find', 'ls'].includes(action.tool) ? 'read' : action.tool;
   if (action.custom) {
     const c = policy.customTools;
     if (action.tool === 'recall') add(c?.recall, 'CUSTOM_TOOL');

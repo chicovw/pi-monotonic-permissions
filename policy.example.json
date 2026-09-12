@@ -95,7 +95,9 @@
       "write": "PRIVATE",
       "edit": "PRIVATE",
       "grep": "PRIVATE",
-      "recall": "PRIVATE"
+      "recall": "PRIVATE",
+      "find": "PRIVATE",
+      "ls": "PRIVATE"
     },
     "routes": [
       {

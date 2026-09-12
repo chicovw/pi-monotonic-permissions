@@ -1,5 +1,7 @@
 import { classify, UnsupportedOperation } from './bash.ts';
 import { normalize, requireReadable, resolveTarget } from './paths.ts';
+import { readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Action, Operation } from './policy.ts';
 import type { ToolInfo } from '@earendil-works/pi-coding-agent';
 import { describeCustom } from './custom-tools.ts';
@@ -11,6 +13,20 @@ function shape(input: unknown, keys: string[], required: string[]): asserts inpu
 }
 function text(value: unknown): asserts value is string { if (typeof value !== 'string') throw new Error('TOOL_SHAPE'); }
 function number(value: unknown): void { if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)) throw new Error('TOOL_SHAPE'); }
+async function directoryTargets(path: string, cwd: string, recursive: boolean, includeChildren = false): Promise<NonNullable<Action['targets']>> {
+  const out: NonNullable<Action['targets']> = [];
+  const visited = new Set<string>(); let count = 0;
+  async function visit(name: string): Promise<void> {
+    if (++count > 2048) throw new UnsupportedOperation('INSPECTION_LIMIT');
+    const target = await resolveTarget(name, cwd);
+    out.push({ target, operations: ['read'] });
+    if ((!recursive && !includeChildren) || !target.directory || visited.has(target.identity)) return;
+    visited.add(target.identity);
+    for (const entry of await readdir(target.lexical)) await visit(join(target.lexical, entry));
+  }
+  await visit(path);
+  return out;
+}
 
 export async function describe(request: Request, cwd: string, info?: ToolInfo): Promise<Action> {
   if (typeof request.toolCallId !== 'string' || !request.toolCallId) throw new Error('TOOL_SHAPE');
@@ -50,9 +66,25 @@ export async function describe(request: Request, cwd: string, info?: ToolInfo): 
     if (!Array.isArray(input.edits) || !input.edits.length) throw new Error('TOOL_SHAPE');
     for (const edit of input.edits) { shape(edit, ['oldText', 'newText'], ['oldText', 'newText']); text(edit.oldText); text(edit.newText); }
     operations = ['read', 'write', 'edit'];
+  } else if (request.toolName === 'ls') {
+    shape(input, ['path', 'limit'], []);
+    if (input.path !== undefined) text(input.path);
+    number(input.limit);
+    const path = input.path ?? '.';
+    const targets = await directoryTargets(path, cwd, false, true);
+    if (!targets[0].target.directory) throw new Error('DIRECTORY_REQUIRED');
+    action.targets.push(...targets);
+    return action;
+  } else if (request.toolName === 'find') {
+    shape(input, ['pattern', 'path', 'limit'], ['pattern']); text(input.pattern);
+    if (input.path !== undefined) text(input.path);
+    number(input.limit);
+    const targets = await directoryTargets(input.path ?? '.', cwd, true);
+    if (!targets[0].target.directory) throw new Error('DIRECTORY_REQUIRED');
+    action.targets.push(...targets);
+    return action;
   } else {
-    // These are native Pi surfaces whose filesystem/process semantics remain unsupported.
-    if (['find', 'ls', 'powershell'].includes(request.toolName)) throw new UnsupportedOperation('UNSUPPORTED_TOOL');
+    if (request.toolName === 'powershell') throw new UnsupportedOperation('UNSUPPORTED_TOOL');
     return describeCustom(request, info);
   }
   text(input.path); normalize(input.path, cwd);

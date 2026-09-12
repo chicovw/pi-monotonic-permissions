@@ -87,7 +87,9 @@ export function createGate(globalPath: string | undefined, diagnostics?: (event:
   }
   function classifyAction(s: Snapshot, action: Action) {
     const config = s.global.execution!;
-    const exposure = config.tools?.[action.tool] ?? config.tools?.['*'];
+    // Discovery tools expose filesystem metadata and are governed by the native read ceiling
+    // unless an operator declares a stricter tool-specific classification.
+    const exposure = config.tools?.[action.tool] ?? (['find', 'ls'].includes(action.tool) ? config.tools?.read : undefined) ?? config.tools?.['*'];
     if (!exposure) throw new Error('CLASSIFICATION_UNAVAILABLE');
     let classification = maxClassification(contextClassification, exposure);
     if (action.tool === 'recall') classification = maxClassification(classification, config.history!, s.project?.execution?.history ?? 'PUBLIC');

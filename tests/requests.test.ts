@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fixture, policy, request, context } from './fixtures.ts';
@@ -15,13 +15,16 @@ test('strict native read-only includes Markdown, source, JSON and configuration'
     for (const tool of ['write', 'edit']) assert.equal((await gate.call(request(tool, path), context(f.cwd)))?.block, true);
   }
 });
-test('single-file grep works; directory grep/find/ls/powershell/custom blocked', async t => {
+test('native discovery is bounded; directory grep and protected traversal stay blocked', async t => {
   const f = await fixture(); t.after(f.cleanup); const gate = await f.gate();
   const grep = (path: string) => ({ toolName: 'grep', toolCallId: 'grep', input: { path, pattern: 'safe' } });
   assert.equal(await gate.call(grep('safe.txt'), context(f.cwd)), undefined);
   for (const path of ['.', '.env']) assert.equal((await gate.call(grep(path), context(f.cwd)))?.block, true);
-  for (const tool of ['find', 'ls', 'powershell', 'custom']) assert.equal((await gate.call(request(tool, '.'), context(f.cwd)))?.block, true);
-  assert.match((await gate.call(request('ls', '.'), context(f.cwd)))!.reason, /UNSUPPORTED_TOOL/);
+  await mkdir(join(f.cwd, 'srcdir')); await writeFile(join(f.cwd, 'srcdir', 'src.ts'), 'safe');
+  assert.equal((await gate.call({ toolName: 'find', toolCallId: 'find', input: { pattern: '*.ts', path: 'srcdir' } }, context(f.cwd)))?.block, undefined);
+  // Directory listing is denied when it would reveal a protected entry; names are treated as sensitive metadata.
+  assert.equal((await gate.call(request('ls', '.'), context(f.cwd)))?.block, true);
+  for (const tool of ['powershell', 'custom']) assert.equal((await gate.call(request(tool, '.'), context(f.cwd)))?.block, true);
 });
 test('unsupported shapes and Pi fallback shorthand cannot reach execution', async t => {
   const f = await fixture(); t.after(f.cleanup); const gate = await f.gate();

@@ -39,7 +39,9 @@
     "docs/claims-review.md",
     "OPERATIONS.md",
     "docs/blackhole-source-review.md",
-    "docs/pi-eligibility-seam-review.md"
+    "docs/pi-eligibility-seam-review.md",
+    "docs/ecosystem-compatibility.md",
+    "docs/adapter-authoring.md"
   ],
   "scripts": {
     "test": "node --test tests/*.test.ts",
